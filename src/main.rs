@@ -10,6 +10,18 @@ enum Pen {
     Thik,
 }
 
+impl Pen {
+    fn combine(p1: Pen, p2: Pen) -> Pen {
+        match (p1, p2) {
+            (Pen::None, p) => p,
+            (p, Pen::None) => p,
+            (Pen::Thik, _) |
+            (_, Pen::Thik) => Pen::Thik,
+            (Pen::Thin, Pen::Thin) => Pen::Thin,
+        }
+    }
+}
+
 impl Display for Pen {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "{}", match *self {
@@ -28,21 +40,51 @@ enum Direction {
     Left,
 }
 
+#[derive(Copy)]
+struct FieldDrawing {
+    up: Pen,
+    right: Pen,
+    down: Pen,
+    left: Pen,
+}
+
+impl FieldDrawing {
+    fn new_from(d: Direction, p: Pen) -> FieldDrawing {
+        let mut up = Pen::None;
+        let mut right = Pen::None;
+        let mut down = Pen::None;
+        let mut left = Pen::None;
+
+        match d {
+            Direction::Up    => up = p,
+            Direction::Right => right = p,
+            Direction::Down  => down = p,
+            Direction::Left  => left = p,
+        }
+
+        FieldDrawing {up: up, right: right, down: down, left: left}
+    }
+
+    fn combine(&self, other: FieldDrawing) -> FieldDrawing {
+        FieldDrawing {up:    Pen::combine(self.up, other.up),
+                      right: Pen::combine(self.right, other.right),
+                      down:  Pen::combine(self.down, other.down),
+                      left:  Pen::combine(self.left, other.left)}
+    }
+}
+
+#[derive(Copy)]
+enum Field {
+    None,
+    Decoration(char),
+    Drawing(FieldDrawing),
+}
+
 struct Grid {
     w: i16,
     h: i16,
 
-    // Grid serves for painting box-drawing elements.  VDIV and HDIV
-    // contain the width settings of, respectively, vertical and
-    // horizontal lines.  Each array contains two elements per painted
-    // character: the left (or up) and right (or down) leg.  For each
-    // painted characters, two VDIV and two HDIV legs are combined,
-    // and a character is painted according to width settings of these
-    // legs.
-
-    vdiv: Vec<Pen>,
-    hdiv: Vec<Pen>,
-    decor: Vec<char>,
+    grid: Vec<Field>,
 }
 
 impl Grid {
@@ -50,106 +92,94 @@ impl Grid {
         assert!(w >= 0);
         assert!(h >= 0);
 
-        let hcap = 2 * w as usize * (h as usize + 1);
-        let mut hdiv = Vec::with_capacity(hcap);
-        for _ in 0..hcap {
-            hdiv.push(Pen::None);
+        let mut grid = Vec::new();
+        for _ in 0.. (w + 1) * (h + 1) {
+            grid.push(Field::None);
         }
 
-        let vcap = 2 * h as usize * (w as usize + 1);
-        let mut vdiv = Vec::with_capacity(vcap);
-        for _ in 0..vcap {
-            vdiv.push(Pen::None);
-        }
-
-        let mut decor = Vec::with_capacity(w as usize * h as usize);
-        let mut ctr = 0;
-        for _ in 0..(w+1)*(h+1) {
-            if ctr > 0 {
-                decor.push('\0');
-            } else {
-                decor.push('.');
-            }
-            ctr = (ctr + 1) % 6;
-        }
-
-        Grid {w:w as i16, h:h as i16, vdiv:vdiv, hdiv:hdiv, decor:decor}
+        Grid {w:w as i16, h:h as i16, grid:grid}
     }
 
-    fn hcoord(&self, x: i16, y: i16) -> i16 {
-        2 * self.w as i16 * y + 2 * x
+    fn field_idx(&self, x: i16, y: i16) -> usize {
+        y as usize * (self.w + 1) as usize + x as usize
     }
 
-    fn vcoord(&self, x: i16, y: i16) -> i16 {
-        2 * self.h as i16 * x + 2 * y
-    }
-
-    fn do_paint<F: Fn(Pen) -> Pen>(c: i16, div: &mut [Pen], put: &F) {
-        if c >= 0 && (c as u16 as usize) < div.len() {
-            div[c as usize] = put(div[c as usize]);
-        }
-    }
-
-    fn hpaint<F: Fn(Pen) -> Pen>(&mut self, x: i16, y: i16, d: u8, put: &F) {
-        Grid::do_paint (self.hcoord(x, y) + d as i16, &mut self.hdiv[..], put);
-    }
-
-    fn vpaint<F: Fn(Pen) -> Pen>(&mut self, x: i16, y: i16, d: u8, put: &F) {
-        Grid::do_paint (self.vcoord(x, y) + d as i16, &mut self.vdiv[..], put);
-    }
-
-    fn dispatch_paint<F: Fn(Pen) -> Pen>(&mut self, x: i16, y: i16, d: Direction, put: &F) {
-        use Direction::*;
-        if x >= 0 && y >= 0 && x <= self.w as i16 && y <= self.h as i16 {
-            match d {
-                Up if y > 0
-                    => self.vpaint(x, y - 1, 1, put),
-
-                Right if x < self.w as i16
-                    => self.hpaint(x, y, 0, put),
-
-                Down if y < self.h as i16
-                    => self.vpaint(x, y, 0, put),
-
-                Left if x > 0
-                    => self.hpaint(x - 1, y, 1, put),
-
-                _ => {},
-            }
-        }
+    fn field_mut(&mut self, x: i16, y: i16) -> &mut Field {
+        let idx = self.field_idx(x, y);
+        &mut self.grid[idx]
     }
 
     fn paint(&mut self, x: i16, y: i16, d: Direction, p: Pen) {
-        self.dispatch_paint(x, y, d,
-                            &|cur: Pen|
-                            match (cur, p) {
-                                (Pen::None, _) |
-                                (Pen::Thin, Pen::Thik) => p,
-                                (c, _) => c,
-                            });
+        let f = self.field_mut(x, y);
+        *f = match *f {
+            Field::None |
+            Field::Decoration(..)
+                => Field::Drawing(FieldDrawing::new_from(d, p)),
+
+            Field::Drawing(dw)
+                => Field::Drawing(dw.combine(FieldDrawing::new_from(d, p))),
+        }
     }
 
     fn clear(&mut self, x: i16, y: i16, w: i16, h: i16) {
         assert!(w >= 0);
         assert!(h >= 0);
 
-        let eraser = |_: Pen| Pen::None;
-        for xx in x..x+w {
-            for yy in y..y+h {
-                if yy > y {
-                    self.dispatch_paint(xx, yy, Direction::Up, &eraser);
-                }
-                if yy < y+h-1 {
-                    self.dispatch_paint(xx, yy, Direction::Down, &eraser);
-                }
+        // Inner portion can be wiped simply.
+        for xx in x .. x+w {
+            for yy in y .. y+h {
+                // Left or right edge.
+                let ex0 = xx == x;
+                let ex1 = xx == x+w-1;
+                let ex = ex0 || ex1;
 
-                if xx > x {
-                    self.dispatch_paint(xx, yy, Direction::Left, &eraser);
+                // Upper or lower edge.
+                let ey0 = yy == y;
+                let ey1 = yy == y+h-1;
+                let ey = ey0 || ey1;
+
+                let f = self.field_mut(xx, yy);
+
+                if !ex && !ey {
+                    // Non-edge tile.
+                    *f = Field::None;
+                } else {
+                    if ex {
+                        if let Field::Drawing(ref mut dw) = *f {
+                            if !ey {
+                                dw.down = Pen::None;
+                                dw.up = Pen::None;
+                            }
+
+                            if ex0 {
+                                dw.right = Pen::None;
+                            } else {
+                                dw.left = Pen::None;
+                            }
+                        } else {
+                            *f = Field::None;
+                        }
+                    }
+
+                    if ey {
+                        // Upper or lower edge.  We erase the
+                        // horizontal and the inner (down or up) arm.
+                        if let Field::Drawing(ref mut dw) = *f {
+                            if !ex {
+                                dw.left = Pen::None;
+                                dw.right = Pen::None;
+                            }
+
+                            if ey0 {
+                                dw.down = Pen::None;
+                            } else {
+                                dw.up = Pen::None;
+                            }
+                        } else {
+                            *f = Field::None;
+                        }
+                    }
                 }
-                if xx < x+w-1 {
-                    self.dispatch_paint(xx, yy, Direction::Right, &eraser);
-                }
-                self.decor[yy as usize * self.w as usize + xx as usize] = '\0';
             }
         }
     }
@@ -157,7 +187,7 @@ impl Grid {
     fn paint_decoration(&mut self, x: i16, y: i16, s: &str) {
         let mut n = 0;
         for c in s.chars() {
-            self.decor[y as usize * self.w as usize + x as usize + n] = c;
+            *self.field_mut(x+n, y) = Field::Decoration(c);
             n += 1;
         }
     }
@@ -190,37 +220,8 @@ impl Grid {
         }
     }
 
-
-    // Up, Right, Down, Left pen at a given point.
-    fn get(&self, x: i16, y: i16) -> (Pen, Pen, Pen, Pen) {
-        let hc = self.hcoord(x, y) as usize;
-        let vc = self.vcoord(x, y) as usize;
-
-        let p1 = match y {
-            0 => Pen::None,
-            _ => self.vdiv[vc-1],
-        };
-
-        let p2 = match x {
-            _ if x < 0 || x == self.w => Pen::None,
-            _ => self.hdiv[hc],
-        };
-
-        let p3 = match y {
-            _ if y < 0 || y == self.h => Pen::None,
-            _ => self.vdiv[vc],
-        };
-
-        let p4 = match x {
-            0 => Pen::None,
-            _ => self.hdiv[hc-1],
-        };
-
-        (p1, p2, p3, p4)
-    }
-
-    fn render_cell(p: (Pen, Pen, Pen, Pen)) -> &'static str {
-        match p {
+    fn render_field_drawing(dw: FieldDrawing) -> &'static str {
+        match (dw.up, dw.right, dw.down, dw.left) {
             (Pen::None, Pen::None, Pen::None, Pen::None) => " ",
 
             (Pen::None, Pen::None, Pen::None, Pen::Thin) => "╴",
@@ -311,13 +312,18 @@ impl Grid {
     fn render(&self) {
         for y in 0..self.h+1 {
             for x in 0..self.w+1 {
-                nc::mvprintw(y as i32, x as i32,
-                             Grid::render_cell(self.get(x as i16, y as i16)));
+                match self.grid[self.field_idx(x, y)] {
+                    Field::None => {
+                    },
 
-                let d = self.decor[y as usize * self.w as usize + x as usize];
-                if d != '\0' {
-                    nc::mvprintw(y as i32, x as i32, &d.to_string());
-                }
+                    Field::Decoration(c) => {
+                        nc::mvprintw(y as i32, x as i32, &c.to_string());
+                    },
+
+                    Field::Drawing(dw) => {
+                        nc::mvprintw(y as i32, x as i32, Grid::render_field_drawing(dw));
+                    },
+                };
             }
         }
     }
