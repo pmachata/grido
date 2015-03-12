@@ -187,7 +187,9 @@ impl Grid {
     fn paint_decoration(&mut self, x: i16, y: i16, s: &str) {
         let mut n = 0;
         for c in s.chars() {
-            *self.field_mut(x+n, y) = Field::Decoration(c);
+            if c != '\0' {
+                *self.field_mut(x+n, y) = Field::Decoration(c);
+            }
             n += 1;
         }
     }
@@ -317,7 +319,9 @@ impl Grid {
                     },
 
                     Field::Decoration(c) => {
-                        nc::mvprintw(y as i32, x as i32, &c.to_string());
+                        if c != '\0' {
+                            nc::mvprintw(y as i32, x as i32, &c.to_string());
+                        }
                     },
 
                     Field::Drawing(dw) => {
@@ -336,37 +340,106 @@ enum TileType {
     One,
     Two,
     Three,
+    Four,
+    Five,
+    Six,
 }
 
 impl TileType {
     fn render(&self) -> &'static str {
         match *self {
-            TileType::Plain     => "   ",
-            TileType::Permanent => " ○ ",
+            TileType::Plain     => "  ",
+            TileType::Permanent => " ✖ ",//■
             TileType::One       => " • ",
             TileType::Two       => "• •",
             TileType::Three     => "•••",
+            TileType::Four      => " ○ ",
+            TileType::Five      => "○ ○",
+            TileType::Six       => "○○○",
         }
     }
 }
 
-struct Block (Vec<(i16, i16, TileType)>);
+struct Block {
+    x: i16,
+    y: i16,
+    tiles: Vec<(i16, i16, TileType)>,
+}
 
 impl Block {
     fn new() -> Block {
-        Block(vec![])
+        Block {x:0, y:0,
+              tiles:vec![]}
     }
 
-    fn new_1x1() -> Block {
-        use TileType::*;
-        Block(vec![(0, 0, Plain)])
+    fn rand() -> u8 {
+        static mut lfsr: u16 = 0xACE3;
+        unsafe {
+            let bit = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1;
+            lfsr = (lfsr >> 1) | (bit << 15);
+            lfsr as u8
+        }
     }
 
-    fn new_3x3() -> Block {
-        use TileType::*;
-        Block(vec![(-1, -1, Plain), /*( 0, -1, Plain), */( 1, -1, Plain),
-                   (-1,  0, One), /*( 0,  0, Plain),*/ ( 1,  0, Two),
-                   (-1,  1, Permanent), ( 0,  1, Three), ( 1,  1, Plain)])
+    fn new_from_shape(shape: &[(i16, i16)]) -> Block {
+        let mut rtiles = Vec::new();
+        for &(dx, dy) in shape {
+            rtiles.push((dx, dy, TileType::Plain));
+        }
+        Block {x:0, y:0, tiles:rtiles}
+    }
+
+    fn new_random() -> Block {
+        fn shape_1x1() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 1] = [(0, 0)];
+            &SHAPE
+        }
+
+        fn shape_2x2() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 4]
+                = [(-1, -1), ( 0, -1), (-1,  0), ( 0,  0)];
+            &SHAPE
+        }
+
+        fn shape_3x3() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 9]
+                = [(-1, -1), ( 0, -1), ( 1, -1),
+                   (-1,  0), ( 0,  0), ( 1,  0),
+                   (-1,  1), ( 0,  1), ( 1,  1)];
+            &SHAPE
+        }
+
+        fn shape_h() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 7]
+                = [(-1, -1),           ( 1, -1),
+                   (-1,  0), ( 0,  0), ( 1,  0),
+                   (-1,  1),           ( 1,  1)];
+            &SHAPE
+        }
+
+        fn shape_1x2() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 2]
+                = [( 0, -1), ( 0,  0)];
+            &SHAPE
+        }
+
+        fn shape_plus() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 5]
+                = [( 0, -1), (-1,  0), ( 0,  0), ( 1,  0), ( 0,  1)];
+            &SHAPE
+        }
+
+        loop {
+            match Block::rand() {
+                0 => return Block::new_from_shape(shape_1x1()),
+                1 => return Block::new_from_shape(shape_1x2()),
+                2 => return Block::new_from_shape(shape_2x2()),
+                3 => return Block::new_from_shape(shape_3x3()),
+                4 => return Block::new_from_shape(shape_h()),
+                5 => return Block::new_from_shape(shape_plus()),
+                _ => {},
+            }
+        }
     }
 
     fn new_border(w: i16, h: i16) -> Block {
@@ -382,7 +455,7 @@ impl Block {
             tiles.push((0, y+1, TileType::Permanent));
             tiles.push((w-1, y, TileType::Permanent));
         }
-        return Block(tiles);
+        Block {x:0, y:0, tiles:tiles}
     }
 
     fn paint_tile(x0: i16, y0: i16, w: i16, h: i16, grid: &mut Grid,
@@ -400,22 +473,24 @@ impl Block {
         }
     }
 
-    fn paint(&self, x0: i16, y0: i16, grid: &mut Grid) {
-        let &Block(ref tiles) = self;
+    fn paint(&self, grid: &mut Grid) {
+        let &Block {x:x0, y:y0, ref tiles} = self;
 
         for &(dx, dy, tt) in tiles {
+            let x = x0 + dx;
+            let y = y0 + dy;
 
-            let up = self.at(dx, dy-1);
-            let right = self.at(dx+1, dy);
-            let down = self.at(dx, dy+1);
-            let left = self.at(dx-1, dy);
+            let up = self.at(x, y-1);
+            let right = self.at(x+1, y);
+            let down = self.at(x, y+1);
+            let left = self.at(x-1, y);
 
             // A tile is 5x3, but the walls are shared, so we place
             // them to dx*4, dy*2.
-            let tx = 4 * (x0 + dx);
-            let ty = 2 * (y0 + dy);
-
+            let tx = 4 * x;
+            let ty = 2 * y;
             grid.clear(tx, ty, 5, 3);
+
             Block::paint_tile(tx, ty, 4, 2, grid,
                               up.is_some(), right.is_some(),
                               down.is_some(), left.is_some());
@@ -423,32 +498,53 @@ impl Block {
         }
     }
 
-    fn at (&self, x: i16, y: i16) -> Option<TileType> {
-        let &Block (ref tiles) = self;
+    fn at(&self, x: i16, y: i16) -> Option<TileType> {
+        let &Block {x:x0, y:y0, ref tiles} = self;
         for &(dx, dy, tt) in tiles {
-            if dx == x && dy == y {
+            if x == x0+dx && y == y0+dy {
                 return Some(tt)
             }
         }
-
-        return None
+        None
     }
 
-    fn turn(self) -> Block {
-        let Block(tiles) = self;
+    fn turned(&self) -> Block {
+        let &Block {x:x0, y:y0, ref tiles} = self;
+
         let mut rtiles = Vec::with_capacity(tiles.len());
-        for (dx, dy, tt) in tiles {
+        for &(dx, dy, tt) in tiles {
             rtiles.push((dy, -dx, tt));
         }
-        Block(rtiles)
+        Block {x:x0, y:y0, tiles:rtiles}
     }
 
-    fn drop(self, x0: i16, y0: i16, dest: &mut Block) {
-        let Block(tiles) = self;
-        let &mut Block(ref mut dtiles) = dest;
-        for (dx, dy, tt) in tiles {
-            dtiles.push((x0 + dx, y0 + dy, tt));
+    fn moved(&self, dx: i16, dy: i16) -> Block {
+        let &Block {x:x0, y:y0, ref tiles} = self;
+        let mut rtiles = Vec::with_capacity(tiles.len());
+        for &tile in tiles {
+            rtiles.push(tile);
         }
+        Block {x:x0+dx, y:y0+dy, tiles:rtiles}
+    }
+
+    fn drop(self, dest: &mut Block) {
+        let Block {x:x0, y:y0, tiles} = self;
+        let &mut Block {x:x1, y:y1, tiles:ref mut dtiles} = dest;
+        let ddx = x0 - x1;
+        let ddy = y0 - y1;
+        for (dx, dy, tt) in tiles {
+            dtiles.push((dx + ddx, dy + ddy, tt));
+        }
+    }
+
+    fn collides_with(&self, with: &Block) -> bool {
+        let &Block {x:x0, y:y0, ref tiles} = self;
+        for &(dx, dy, _) in tiles {
+            if let Some(_) = with.at(x0+dx, y0+dy) {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -470,38 +566,61 @@ fn main() {
     nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
 
     let (pgw, pgh) = (17 as i16, 17 as i16);
-    let mut x = 2;
-    let mut y = 2;
-    let mut blk = Block::new_3x3();
+    let mut blk = Block::new_random().moved(2, 2);
     let bd = Block::new_border(pgw, pgh);
     let mut pg = Block::new();
 
     loop {
         {
             let mut grid = Grid::new(4 * pgw, 2 * pgh);
+            for xx in 0..grid.w {
+                for yy in 0..grid.h {
+                    if xx % 3 == yy % 3 {
+                        grid.paint_decoration(xx, yy, ".");
+                    }
+                }
+            }
 
-            pg.paint(0, 0, &mut grid);
-            bd.paint(0, 0, &mut grid);
-            blk.paint(x, y, &mut grid);
+            grid.clear(5, 3, 12, 6);
+            for xx in 0..3 {
+                grid.paint_wall(6 + 4 * xx, 2, 6, Direction::Down,
+                                true, Pen::Thin);
+            }
+            for yy in 0..3 {
+                grid.paint_wall(4, 3 + 2 * yy, 12, Direction::Right,
+                                true, Pen::Thin);
+            }
+
+            pg.paint(&mut grid);
+            bd.paint(&mut grid);
+            blk.paint(&mut grid);
 
             nc::erase();
             grid.render();
             nc::refresh();
         }
 
+        fn try_move(moved: Block, blk: Block, bd: &Block, pg: &Block) -> Block {
+            if !moved.collides_with(&bd) && !moved.collides_with(&pg) {
+                moved
+            } else {
+                blk
+            }
+        };
+
         match nc::getch() {
-            nc::KEY_LEFT => x -= 1,
-            nc::KEY_RIGHT => x += 1,
-            nc::KEY_UP => y -= 1,
-            nc::KEY_DOWN => y += 1,
+            nc::KEY_LEFT => blk = try_move(blk.moved(-1, 0), blk, &bd, &pg),
+            nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &pg),
+            nc::KEY_UP => blk = try_move(blk.moved(0, -1), blk, &bd, &pg),
+            nc::KEY_DOWN => blk = try_move(blk.moved(0, 1), blk, &bd, &pg),
+
             n => match n as u8 as char {
-                '\t' => blk = blk.turn(),
+                '\t' => blk = try_move(blk.turned(), blk, &bd, &pg),
                 '\r' => {
-                    blk.drop(x, y, &mut pg);
-                    blk = Block::new_3x3();
-                    x = 2;
-                    y = 2;
+                    blk.drop(&mut pg);
+                    blk = Block::new_random().moved(2, 2);
                 },
+                ' ' => blk = Block::new_random().moved(2, 2),
                 'q' => break,
                 _ => {
                     /*
