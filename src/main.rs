@@ -311,7 +311,7 @@ impl Grid {
         }
     }
 
-    fn render(&self) {
+    fn render(&self, x0: i16, y0: i16) {
         for y in 0..self.h+1 {
             for x in 0..self.w+1 {
                 match self.grid[self.field_idx(x, y)] {
@@ -320,12 +320,16 @@ impl Grid {
 
                     Field::Decoration(c) => {
                         if c != '\0' {
-                            nc::mvprintw(y as i32, x as i32, &c.to_string());
+                            nc::mvprintw(y0 as i32 + y as i32,
+                                         x0 as i32 + x as i32,
+                                         &c.to_string());
                         }
                     },
 
                     Field::Drawing(dw) => {
-                        nc::mvprintw(y as i32, x as i32, Grid::render_field_drawing(dw));
+                        nc::mvprintw(y0 as i32 + y as i32,
+                                     x0 as i32 + x as i32,
+                                     Grid::render_field_drawing(dw));
                     },
                 };
             }
@@ -423,6 +427,12 @@ impl Block {
             &SHAPE
         }
 
+        fn shape_1x3() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 3]
+                = [( 0, -1), ( 0,  0), (0,  1)];
+            &SHAPE
+        }
+
         fn shape_plus() -> &'static [(i16, i16)] {
             static SHAPE:[(i16, i16); 5]
                 = [( 0, -1), (-1,  0), ( 0,  0), ( 1,  0), ( 0,  1)];
@@ -433,10 +443,11 @@ impl Block {
             match Block::rand() {
                 0 => return Block::new_from_shape(shape_1x1()),
                 1 => return Block::new_from_shape(shape_1x2()),
-                2 => return Block::new_from_shape(shape_2x2()),
-                3 => return Block::new_from_shape(shape_3x3()),
-                4 => return Block::new_from_shape(shape_h()),
-                5 => return Block::new_from_shape(shape_plus()),
+                2 => return Block::new_from_shape(shape_1x3()),
+                3 => return Block::new_from_shape(shape_2x2()),
+                4 => return Block::new_from_shape(shape_3x3()),
+                5 => return Block::new_from_shape(shape_h()),
+                6 => return Block::new_from_shape(shape_plus()),
                 _ => {},
             }
         }
@@ -546,6 +557,39 @@ impl Block {
         }
         false
     }
+
+    fn explode(&mut self) {
+        let mut killlist = Vec::new();
+
+        'next: for &(xx, yy, _) in &self.tiles {
+            let mut sublist = Vec::new();
+            for dx in 0..3 {
+                for dy in 0..3 {
+                    let x2 = self.x + xx + dx;
+                    let y2 = self.y + yy + dy;
+                    match self.at(x2, y2) {
+                        None => continue 'next,
+                        _ => sublist.push((x2, y2)),
+                    }
+                }
+            }
+            for i in sublist {
+                killlist.push(i);
+            }
+        }
+
+        let mut rtiles = Vec::new();
+        'skip: for &(xx, yy, tt) in &self.tiles {
+            for &(x2, y2) in &killlist {
+                if self.x + xx == x2 && self.y + yy == y2 {
+                    continue 'skip;
+                }
+            }
+            rtiles.push((xx, yy, tt));
+        }
+
+        self.tiles = rtiles;
+    }
 }
 
 extern "C" {
@@ -567,6 +611,7 @@ fn main() {
 
     let (pgw, pgh) = (17 as i16, 17 as i16);
     let mut blk = Block::new_random().moved(2, 2);
+    let mut next = Block::new_random().moved(1, 1);
     let bd = Block::new_border(pgw, pgh);
     let mut pg = Block::new();
 
@@ -595,8 +640,12 @@ fn main() {
             bd.paint(&mut grid);
             blk.paint(&mut grid);
 
+            let mut gridlet = Grid::new(12, 6);
+            next.paint(&mut gridlet);
+
             nc::erase();
-            grid.render();
+            grid.render(0, 0);
+            gridlet.render(grid.w + 1, 0);
             nc::refresh();
         }
 
@@ -613,12 +662,19 @@ fn main() {
             nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &pg),
             nc::KEY_UP => blk = try_move(blk.moved(0, -1), blk, &bd, &pg),
             nc::KEY_DOWN => blk = try_move(blk.moved(0, 1), blk, &bd, &pg),
+            nc::KEY_BACKSPACE => {
+                let tmp = next.tiles;
+                next.tiles = blk.tiles;
+                blk.tiles = tmp;
+            },
 
             n => match n as u8 as char {
                 '\t' => blk = try_move(blk.turned(), blk, &bd, &pg),
                 '\r' => {
                     blk.drop(&mut pg);
-                    blk = Block::new_random().moved(2, 2);
+                    pg.explode();
+                    blk = next.moved(1, 1);
+                    next = Block::new_random().moved(1, 1);
                 },
                 ' ' => blk = Block::new_random().moved(2, 2),
                 'q' => break,
