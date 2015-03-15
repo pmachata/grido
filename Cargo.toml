@@ -10,4 +10,3 @@ name = "hello_world"
 
 [dependencies]
 ncurses = "5.71.1"
-posix = "0.0.2"

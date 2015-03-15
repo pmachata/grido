@@ -347,7 +347,7 @@ fn rand() -> u8 {
     }
 }
 
-#[derive(Copy)]
+#[derive(Copy,PartialEq)]
 enum TileType {
     Plain,
     Permanent,
@@ -360,6 +360,7 @@ enum TileType {
     Ghost,
     Picker,
     Disguise,
+    Centerpiece,
 }
 
 impl TileType {
@@ -374,6 +375,7 @@ impl TileType {
                 15 => return TileType::Ghost,
                 16 => return TileType::Picker,
                 17 => return TileType::Disguise,
+                18 => return TileType::Centerpiece,
                 _ => {},
             }
         }
@@ -392,6 +394,7 @@ impl TileType {
             TileType::ThreeKiller => "↯↯↯",
             TileType::Ghost     => " _ ",
             TileType::Picker    => "⟦ ⟧",
+            TileType::Centerpiece => " ◉ ",
         }
     }
 
@@ -416,7 +419,7 @@ impl TileType {
         }
     }
 
-    fn explodes(&self) -> bool {
+    fn is_plain(&self) -> bool {
         match *self {
             TileType::Plain |
             TileType::Permanent |
@@ -427,6 +430,26 @@ impl TileType {
             TileType::Killer |
             TileType::TwoKiller |
             TileType::ThreeKiller => true,
+            _ => false,
+        }
+    }
+
+    fn explodes(&self, tt2: TileType) -> bool {
+        match *self {
+            // If these are centerpieces, the block doesn't explode.
+            TileType::Killer |
+            TileType::TwoKiller |
+            TileType::ThreeKiller => false,
+
+            // Plain tiles explode other plain tiles (i.e. not
+            // Centerpieces).
+            tt1 if tt1.is_plain() => tt2.is_plain(),
+
+            // If Centerpieces are centerpieces, they explode other
+            // plain tiles or other Centerpieces.
+            TileType::Centerpiece => tt2.is_plain() || tt2 == TileType::Centerpiece,
+
+            // The rest doesn't explode.
             _ => false,
         }
     }
@@ -442,6 +465,17 @@ impl TileType {
             (TileType::Killer, _) => (None, None),
             (_, TileType::Killer) => (None, None),
             (m, n) => (Some(m), Some(n)),
+        }
+    }
+
+    fn explode_shape(&self) -> &'static [(i16, i16)] {
+        match *self {
+            _ => {
+                static SHAPE:[(i16, i16); 9] = [(-1, -1), (0, -1), (1, -1),
+                                                (-1,  0), (0,  0), (1,  0),
+                                                (-1,  1), (0,  1), (1,  1)];
+                &SHAPE
+            },
         }
     }
 }
@@ -665,20 +699,18 @@ impl Block {
         let mut killlist = Vec::new();
 
         {
-            'next: for &(xx, yy, _) in &self.tiles {
+            'next: for &(xx, yy, tt) in &self.tiles {
                 let mut sublist = Vec::new();
-                for dx in 0..3 {
-                    for dy in 0..3 {
-                        let x2 = self.x + xx + dx;
-                        let y2 = self.y + yy + dy;
-                        match self.at(x2, y2) {
-                            None => continue 'next,
-                            Some(tt) => if tt.explodes() {
-                                sublist.push((x2, y2));
-                            } else {
-                                continue 'next
-                            },
-                        }
+                for &(dx, dy) in tt.explode_shape() {
+                    let x2 = self.x + xx + dx;
+                    let y2 = self.y + yy + dy;
+                    match self.at(x2, y2) {
+                        None => continue 'next,
+                        Some(tt2) => if tt.explodes(tt2) {
+                            sublist.push((x2, y2));
+                        } else {
+                            continue 'next
+                        },
                     }
                 }
                 for i in sublist {
