@@ -337,6 +337,16 @@ impl Grid {
     }
 }
 
+
+fn rand() -> u8 {
+    static mut lfsr: u16 = 0xACE3;
+    unsafe {
+        let bit = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1;
+        lfsr = (lfsr >> 1) | (bit << 15);
+        lfsr as u8
+    }
+}
+
 #[derive(Copy)]
 enum TileType {
     Plain,
@@ -344,12 +354,27 @@ enum TileType {
     One,
     Two,
     Three,
-    Four,
-    Five,
-    Six,
+    Killer,
+    Ghost,
+    Picker,
 }
 
 impl TileType {
+    fn new_random() -> TileType {
+        loop {
+            match rand() {
+                0...10 => return TileType::Plain,
+                11...12 => return TileType::One,
+                13 => return TileType::Two,
+                14 => return TileType::Three,
+                15 => return TileType::Killer,
+                16 => return TileType::Ghost,
+                17 => return TileType::Picker,
+                _ => {},
+            }
+        }
+    }
+
     fn render(&self) -> &'static str {
         match *self {
             TileType::Plain     => "  ",
@@ -357,9 +382,48 @@ impl TileType {
             TileType::One       => " • ",
             TileType::Two       => "• •",
             TileType::Three     => "•••",
-            TileType::Four      => " ○ ",
-            TileType::Five      => "○ ○",
-            TileType::Six       => "○○○",
+            TileType::Killer    => " ◇ ",
+            TileType::Ghost     => " _ ",
+            TileType::Picker    => "❬ ❭",
+        }
+    }
+
+    fn drop(&self) -> Option<TileType> {
+        match *self {
+            TileType::Ghost => None,
+            n => Some(n),
+        }
+    }
+
+    fn explode(&self) -> Option<TileType> {
+        match *self {
+            TileType::Permanent => Some(TileType::Permanent),
+            TileType::One => Some(TileType::Plain),
+            TileType::Two => Some(TileType::One),
+            TileType::Three => Some(TileType::Two),
+            _ => None,
+        }
+    }
+
+    fn explodes(&self) -> bool {
+        match *self {
+            TileType::Plain |
+            TileType::Permanent |
+            TileType::One |
+            TileType::Two |
+            TileType::Three |
+            TileType::Ghost => true,
+            _ => false,
+        }
+    }
+
+    fn collide(t1: TileType, t2: TileType) -> (Option<TileType>, Option<TileType>) {
+        match (t1, t2) {
+            (_, TileType::Killer) => (None, None),
+            (TileType::Killer, _) => (None, None),
+            (TileType::Picker, _) => (Some(t2), None),
+            (_, TileType::Picker) => (None, Some(t1)),
+            (m, n) => (Some(m), Some(n)),
         }
     }
 }
@@ -376,19 +440,10 @@ impl Block {
               tiles:vec![]}
     }
 
-    fn rand() -> u8 {
-        static mut lfsr: u16 = 0xACE3;
-        unsafe {
-            let bit = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1;
-            lfsr = (lfsr >> 1) | (bit << 15);
-            lfsr as u8
-        }
-    }
-
     fn new_from_shape(shape: &[(i16, i16)]) -> Block {
         let mut rtiles = Vec::new();
         for &(dx, dy) in shape {
-            rtiles.push((dx, dy, TileType::Plain));
+            rtiles.push((dx, dy, TileType::new_random()));
         }
         Block {x:0, y:0, tiles:rtiles}
     }
@@ -399,25 +454,18 @@ impl Block {
             &SHAPE
         }
 
-        fn shape_2x2() -> &'static [(i16, i16)] {
-            static SHAPE:[(i16, i16); 4]
-                = [(-1, -1), ( 0, -1), (-1,  0), ( 0,  0)];
+        fn shape_8() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 2] = [( 0, -1), ( 0,  1)];
             &SHAPE
         }
 
-        fn shape_3x3() -> &'static [(i16, i16)] {
-            static SHAPE:[(i16, i16); 9]
-                = [(-1, -1), ( 0, -1), ( 1, -1),
-                   (-1,  0), ( 0,  0), ( 1,  0),
-                   (-1,  1), ( 0,  1), ( 1,  1)];
+        fn shape_d() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 2] = [(-1, -1), ( 0, 0)];
             &SHAPE
         }
 
-        fn shape_h() -> &'static [(i16, i16)] {
-            static SHAPE:[(i16, i16); 7]
-                = [(-1, -1),           ( 1, -1),
-                   (-1,  0), ( 0,  0), ( 1,  0),
-                   (-1,  1),           ( 1,  1)];
+        fn shape_l() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 3] = [(-1, 0), (0,  0), ( 0, -1)];
             &SHAPE
         }
 
@@ -433,21 +481,20 @@ impl Block {
             &SHAPE
         }
 
-        fn shape_plus() -> &'static [(i16, i16)] {
-            static SHAPE:[(i16, i16); 5]
-                = [( 0, -1), (-1,  0), ( 0,  0), ( 1,  0), ( 0,  1)];
+        fn shape_castle() -> &'static [(i16, i16)] {
+            static SHAPE:[(i16, i16); 3] = [( 0, -1), (-1,  0), ( 1,  0)];
             &SHAPE
         }
 
         loop {
-            match Block::rand() {
+            match rand() {
                 0 => return Block::new_from_shape(shape_1x1()),
                 1 => return Block::new_from_shape(shape_1x2()),
                 2 => return Block::new_from_shape(shape_1x3()),
-                3 => return Block::new_from_shape(shape_2x2()),
-                4 => return Block::new_from_shape(shape_3x3()),
-                5 => return Block::new_from_shape(shape_h()),
-                6 => return Block::new_from_shape(shape_plus()),
+                3 => return Block::new_from_shape(shape_8()),
+                4 => return Block::new_from_shape(shape_d()),
+                5 => return Block::new_from_shape(shape_l()),
+                6 => return Block::new_from_shape(shape_castle()),
                 _ => {},
             }
         }
@@ -538,13 +585,51 @@ impl Block {
         Block {x:x0+dx, y:y0+dy, tiles:rtiles}
     }
 
+    fn moved_to(&self, x: i16, y: i16) -> Block {
+        self.moved(x - self.x, y - self.y)
+    }
+
+    fn collide(blk1: Block, blk2: &Block) -> (Block, Block) {
+        let Block {x:x1, y:y1, tiles:tiles1} = blk1;
+        let mut rtiles1 = Vec::new();
+
+        let &Block {x:x2, y:y2, ..} = blk2;
+        let mut rtiles2 = Vec::new();
+        for &(dx, dy, tt2) in &blk2.tiles {
+            rtiles2.push((dx, dy, tt2));
+        }
+
+        for (dx1, dy1, tt1) in tiles1 {
+            let xx1 = x1 + dx1;
+            let yy1 = y1 + dy1;
+            if let Some(tt2) = blk2.at(xx1, yy1) {
+                let (nt1, nt2) = TileType::collide(tt1, tt2);
+                if let Some(ntt1) = nt1 {
+                    rtiles1.push((dx1, dy1, ntt1));
+                }
+                rtiles2.retain(|&(dx2, dy2, _): &(i16, i16, TileType)|
+                               x2 + dx2 != xx1 || y2 + dy2 != yy1);
+                if let Some(ntt2) = nt2 {
+                    rtiles2.push((xx1 - blk2.x, yy1 - blk2.y, ntt2));
+                }
+            } else {
+                rtiles1.push((dx1, dy1, tt1));
+            }
+        }
+
+        (Block {x:blk1.x, y:blk1.y, tiles:rtiles1},
+         Block {x:blk2.x, y:blk2.y, tiles:rtiles2})
+    }
+
     fn drop(self, dest: &mut Block) {
         let Block {x:x0, y:y0, tiles} = self;
         let &mut Block {x:x1, y:y1, tiles:ref mut dtiles} = dest;
         let ddx = x0 - x1;
         let ddy = y0 - y1;
         for (dx, dy, tt) in tiles {
-            dtiles.push((dx + ddx, dy + ddy, tt));
+            if let Some(tt2) = tt.drop() {
+                dtiles.push((dx + ddx, dy + ddy, tt2));
+            }
         }
     }
 
@@ -561,34 +646,45 @@ impl Block {
     fn explode(&mut self) {
         let mut killlist = Vec::new();
 
-        'next: for &(xx, yy, _) in &self.tiles {
-            let mut sublist = Vec::new();
-            for dx in 0..3 {
-                for dy in 0..3 {
-                    let x2 = self.x + xx + dx;
-                    let y2 = self.y + yy + dy;
-                    match self.at(x2, y2) {
-                        None => continue 'next,
-                        _ => sublist.push((x2, y2)),
+        {
+            'next: for &(xx, yy, _) in &self.tiles {
+                let mut sublist = Vec::new();
+                for dx in 0..3 {
+                    for dy in 0..3 {
+                        let x2 = self.x + xx + dx;
+                        let y2 = self.y + yy + dy;
+                        match self.at(x2, y2) {
+                            None => continue 'next,
+                            Some(tt) => if tt.explodes() {
+                                sublist.push((x2, y2));
+                            } else {
+                                continue 'next
+                            },
+                        }
                     }
                 }
-            }
-            for i in sublist {
-                killlist.push(i);
-            }
-        }
-
-        let mut rtiles = Vec::new();
-        'skip: for &(xx, yy, tt) in &self.tiles {
-            for &(x2, y2) in &killlist {
-                if self.x + xx == x2 && self.y + yy == y2 {
-                    continue 'skip;
+                for i in sublist {
+                    killlist.push(i);
                 }
             }
-            rtiles.push((xx, yy, tt));
         }
 
-        self.tiles = rtiles;
+        {
+            let mut rtiles = Vec::new();
+            'next: for &(xx, yy, tt) in &self.tiles {
+                for &(x2, y2) in &killlist {
+                    if self.x + xx == x2 && self.y + yy == y2 {
+                        if let Some(tt2) = tt.explode() {
+                            rtiles.push((xx, yy, tt2));
+                        }
+                        continue 'next;
+                    }
+                }
+                rtiles.push((xx, yy, tt));
+            }
+
+            self.tiles = rtiles;
+        }
     }
 }
 
@@ -610,8 +706,8 @@ fn main() {
     nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
 
     let (pgw, pgh) = (17 as i16, 17 as i16);
-    let mut blk = Block::new_random().moved(2, 2);
-    let mut next = Block::new_random().moved(1, 1);
+    let mut blk = Block::new_random().moved_to(2, 2);
+    let mut next = Block::new_random().moved_to(1, 1);
     let bd = Block::new_border(pgw, pgh);
     let mut pg = Block::new();
 
@@ -649,34 +745,48 @@ fn main() {
             nc::refresh();
         }
 
-        fn try_move(moved: Block, blk: Block, bd: &Block, pg: &Block) -> Block {
-            if !moved.collides_with(&bd) && !moved.collides_with(&pg) {
-                moved
-            } else {
+        fn block_collides(block: &Block, bd: &Block, pg: &Block) -> bool {
+            block.collides_with(&bd) || block.collides_with(&pg)
+        }
+
+        fn try_move(moved: Block, blk: Block, bd: &Block, pg: &mut Block) -> Block {
+            if moved.collides_with(bd) {
                 blk
+            } else if moved.collides_with(pg) {
+                let (moved2, pg2) = Block::collide(moved, pg);
+                if moved2.collides_with(&pg2) {
+                    blk
+                } else {
+                    *pg = pg2;
+                    moved2
+                }
+            } else {
+                moved
             }
         };
 
         match nc::getch() {
-            nc::KEY_LEFT => blk = try_move(blk.moved(-1, 0), blk, &bd, &pg),
-            nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &pg),
-            nc::KEY_UP => blk = try_move(blk.moved(0, -1), blk, &bd, &pg),
-            nc::KEY_DOWN => blk = try_move(blk.moved(0, 1), blk, &bd, &pg),
+            nc::KEY_LEFT => blk = try_move(blk.moved(-1, 0), blk, &bd, &mut pg),
+            nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &mut pg),
+            nc::KEY_UP => blk = try_move(blk.moved(0, -1), blk, &bd, &mut pg),
+            nc::KEY_DOWN => blk = try_move(blk.moved(0, 1), blk, &bd, &mut pg),
             nc::KEY_BACKSPACE => {
-                let tmp = next.tiles;
-                next.tiles = blk.tiles;
-                blk.tiles = tmp;
+                let moved = next.moved_to(blk.x, blk.y);
+                if !block_collides(&moved, &bd, &pg) {
+                    next = blk.moved_to(1, 1);
+                    blk = moved;
+                }
             },
 
             n => match n as u8 as char {
-                '\t' => blk = try_move(blk.turned(), blk, &bd, &pg),
+                '\t' => blk = try_move(blk.turned(), blk, &bd, &mut pg),
                 '\r' => {
                     blk.drop(&mut pg);
                     pg.explode();
                     blk = next.moved(1, 1);
-                    next = Block::new_random().moved(1, 1);
+                    next = Block::new_random().moved_to(1, 1);
                 },
-                ' ' => blk = Block::new_random().moved(2, 2),
+                ' ' => blk = Block::new_random().moved_to(2, 2),
                 'q' => break,
                 _ => {
                     /*
@@ -686,6 +796,11 @@ fn main() {
                      */
                 },
             }
+        }
+
+        if blk.tiles.is_empty() {
+            blk = next.moved(1, 1);
+            next = Block::new_random().moved_to(1, 1);
         }
     }
 
