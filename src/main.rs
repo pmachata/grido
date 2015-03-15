@@ -349,35 +349,52 @@ fn rand() -> u8 {
 
 #[derive(Copy,PartialEq)]
 enum TileType {
-    Plain,
+    Plain(u8),
     Permanent,
-    One,
-    Two,
-    Three,
-    Killer,
-    TwoKiller,
-    ThreeKiller,
+    Killer(u8),
     Fake,
     Picker,
-    Centerpiece,
+    Centerpiece(u8),
     Edgepiece,
-    Ghost,
 }
 
 impl TileType {
-    fn new_random() -> TileType {
+    fn level(score: u32) -> u8 {
+        let ret = score / 500;
+        if ret > 255 {
+            255
+        } else {
+            ret as u8
+        }
+    }
+
+    fn new_random(score: u32) -> TileType {
+        let lvl = TileType::level(score);
         loop {
             match rand() {
-                0...10 => return TileType::Plain,
-                11 => return TileType::One,
-                12 => return TileType::Two,
-                13 => return TileType::Three,
-                14 => return TileType::Killer,
-                15 => return TileType::Fake,
-                16 => return TileType::Picker,
-                18 => return TileType::Centerpiece,
-                19 => return TileType::Edgepiece,
-                20 => return TileType::Ghost,
+                0...10
+                    => return TileType::Plain(rand() % (lvl / 10 + 1)),
+
+                11 if lvl > 0
+                    => return TileType::Plain(1 + rand() % lvl),
+
+                12 if lvl > 1
+                    => return TileType::Centerpiece(1 + rand() % (lvl / 2)),
+
+                13 if lvl > 4
+                    => return TileType::Killer(1 + rand() % (lvl / 4)),
+
+                14...15 => return TileType::Picker,
+
+                16 if lvl > 8
+                    => return TileType::Fake,
+
+                17 if lvl > 8
+                    => return TileType::Permanent,
+
+                /*
+                20 => return TileType::Edgepiece,
+                 */
                 _ => {},
             }
         }
@@ -385,26 +402,55 @@ impl TileType {
 
     fn render(&self) -> &'static str {
         match *self {
-            TileType::Plain     => "   ",
             TileType::Permanent => " ✖ ",//■
-            TileType::One       => " • ",
-            TileType::Two       => "• •",
-            TileType::Three     => "•••",
-            TileType::Killer    => " ↯ ",
-            TileType::TwoKiller => "↯ ↯",
-            TileType::ThreeKiller => "↯↯↯",
+            TileType::Plain(n) => match n {
+                0 => "   ",
+                1 => " • ",
+                2 => " •²",
+                3 => " •³",
+                4 => " •⁴",
+                5 => " •⁵",
+                6 => " •⁶",
+                7 => " •⁷",
+                8 => " •⁸",
+                9 => " •⁹",
+                _ => " •ⁿ",
+            },
+            TileType::Killer(n) => match n {
+                0 => " ↯⁰",
+                1 => " ↯ ",
+                2 => " ↯²",
+                3 => " ↯³",
+                4 => " ↯⁴",
+                5 => " ↯⁵",
+                6 => " ↯⁶",
+                7 => " ↯⁷",
+                8 => " ↯⁸",
+                9 => " ↯⁹",
+                _ => " ↯ⁿ",
+            },
             TileType::Fake      => " _ ",
             TileType::Picker    => "⟦ ⟧",
-            TileType::Centerpiece => " ◉ ",
+            TileType::Centerpiece(n) => match n {
+                0 => " ◉⁰",
+                1 => " ◉ ",
+                2 => " ◉²",
+                3 => " ◉³",
+                4 => " ◉⁴",
+                5 => " ◉⁵",
+                6 => " ◉⁶",
+                7 => " ◉⁷",
+                8 => " ◉⁸",
+                9 => " ◉⁹",
+                _ => " ◉ⁿ",
+            },
             TileType::Edgepiece => " ▣ ",
-            TileType::Ghost     => " ⌀ ",
         }
     }
 
     fn drop(&self) -> Option<TileType> {
         match *self {
             TileType::Fake => None,
-            TileType::Ghost => Some(TileType::Plain),
             n => Some(n),
         }
     }
@@ -412,28 +458,21 @@ impl TileType {
     fn explode(&self) -> Option<TileType> {
         match *self {
             TileType::Permanent => Some(TileType::Permanent),
-            TileType::One => Some(TileType::Plain),
-            TileType::Two => Some(TileType::One),
-            TileType::Three => Some(TileType::Two),
-            TileType::Killer => Some(TileType::TwoKiller),
-            TileType::TwoKiller => Some(TileType::ThreeKiller),
-            TileType::ThreeKiller => Some(TileType::Three),
+
+            TileType::Plain(0) => None,
+            TileType::Plain(n) => Some(TileType::Plain(n - 1)),
+
+            TileType::Centerpiece(1) => None,
+            TileType::Centerpiece(n) => Some(TileType::Centerpiece(n - 1)),
+
             _ => None,
         }
     }
 
     fn is_plain(&self) -> bool {
         match *self {
-            TileType::Plain |
-            TileType::Permanent |
-            TileType::One |
-            TileType::Two |
-            TileType::Three |
+            TileType::Plain(_) |
             TileType::Fake |
-            TileType::Ghost |
-            TileType::Killer |
-            TileType::TwoKiller |
-            TileType::ThreeKiller |
             TileType::Edgepiece => true,
             _ => false,
         }
@@ -450,7 +489,13 @@ impl TileType {
 
             // If Centerpieces are centerpieces, they explode other
             // plain tiles or other Centerpieces.
-            TileType::Centerpiece => tt2.is_plain() || tt2 == TileType::Centerpiece,
+            TileType::Centerpiece(_) => {
+                if let TileType::Centerpiece(_) = tt2 {
+                    true
+                } else {
+                    tt2.is_plain()
+                }
+            },
 
             // The rest doesn't explode.
             _ => false,
@@ -461,20 +506,19 @@ impl TileType {
         match (t1, t2) {
             (TileType::Picker, _) => (t2.drop(), None),
             (_, TileType::Picker) => (None, t1.drop()),
-            (TileType::ThreeKiller, _) => (Some(TileType::TwoKiller), None),
-            (_, TileType::ThreeKiller) => (None, Some(TileType::TwoKiller)),
-            (TileType::TwoKiller, _) => (Some(TileType::Killer), None),
-            (_, TileType::TwoKiller) => (None, Some(TileType::Killer)),
-            (TileType::Killer, _) => (None, None),
-            (_, TileType::Killer) => (None, None),
+
+            (TileType::Killer(1), _) => (None, None),
+            (TileType::Killer(n), _) => (Some(TileType::Killer(n - 1)), None),
+
+            (_, TileType::Killer(1)) => (None, None),
+            (_, TileType::Killer(n)) => (None, Some(TileType::Killer(n - 1))),
+
             (m, n) => (Some(m), Some(n)),
         }
     }
 
     fn collides(t1: TileType, t2: TileType) -> bool {
         match (t1, t2) {
-            (TileType::Ghost, _) |
-            (_, TileType::Ghost) => false,
             _ => true,
         }
     }
@@ -503,15 +547,15 @@ impl Block {
               tiles:vec![]}
     }
 
-    fn new_from_shape(shape: &[(i16, i16)]) -> Block {
+    fn new_from_shape(shape: &[(i16, i16)], score: u32) -> Block {
         let mut rtiles = Vec::new();
         for &(dx, dy) in shape {
-            rtiles.push((dx, dy, TileType::new_random()));
+            rtiles.push((dx, dy, TileType::new_random(score)));
         }
         Block {x:0, y:0, tiles:rtiles}
     }
 
-    fn new_random() -> Block {
+    fn new_random(score: u32) -> Block {
         fn shape_1x1() -> &'static [(i16, i16)] {
             static SHAPE:[(i16, i16); 1] = [(0, 0)];
             &SHAPE
@@ -551,13 +595,13 @@ impl Block {
 
         loop {
             match rand() {
-                0 => return Block::new_from_shape(shape_1x1()),
-                1 => return Block::new_from_shape(shape_1x2()),
-                2 => return Block::new_from_shape(shape_1x3()),
-                3 => return Block::new_from_shape(shape_8()),
-                4 => return Block::new_from_shape(shape_d()),
-                5 => return Block::new_from_shape(shape_l()),
-                6 => return Block::new_from_shape(shape_castle()),
+                0 => return Block::new_from_shape(shape_1x1(), score),
+                1 => return Block::new_from_shape(shape_1x2(), score),
+                2 => return Block::new_from_shape(shape_1x3(), score),
+                3 => return Block::new_from_shape(shape_8(), score),
+                4 => return Block::new_from_shape(shape_d(), score),
+                5 => return Block::new_from_shape(shape_l(), score),
+                6 => return Block::new_from_shape(shape_castle(), score),
                 _ => {},
             }
         }
@@ -730,7 +774,7 @@ impl Block {
         false
     }
 
-    fn explode(&mut self) {
+    fn explode(&mut self) -> u32 {
         let mut killlist = Vec::new();
 
         {
@@ -770,6 +814,8 @@ impl Block {
 
             self.tiles = rtiles;
         }
+
+        (killlist.len() * killlist.len()) as u32
     }
 }
 
@@ -791,8 +837,9 @@ fn main() {
     nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
 
     let (pgw, pgh) = (16 as i16, 12 as i16);
-    let mut blk = Block::new_random().moved_to(2, 2);
-    let mut next = Block::new_random().moved_to(1, 1);
+    let mut score = 0;
+    let mut blk = Block::new_random(score).moved_to(2, 2);
+    let mut next = Block::new_random(score).moved_to(1, 1);
     let bd = Block::new_border(pgw, pgh);
     let mut pg = Block::new();
 
@@ -827,6 +874,8 @@ fn main() {
             nc::erase();
             grid.render(0, 0);
             gridlet.render(grid.w + 1, 0);
+            nc::mvprintw(gridlet.h as i32 + 1, grid.w as i32 + 1,
+                         &format!("Score: {}", score));
             nc::refresh();
         }
 
@@ -867,7 +916,7 @@ fn main() {
             n => match n as u8 as char {
                 '\t' => blk = try_move(blk.turned(), blk, &bd, &mut pg),
                 '\r' => drop = true,
-                ' ' => blk = Block::new_random().moved_to(2, 2),
+                ' ' => blk = Block::new_random(score).moved_to(2, 2),
                 'q' => break,
                 _ => {
                     /*
@@ -881,9 +930,9 @@ fn main() {
 
         if blk.tiles.is_empty() || drop {
             if blk.drop(&mut pg, &bd) {
-                pg.explode();
+                score += pg.explode();
                 blk = next.moved(1, 1);
-                next = Block::new_random().moved_to(1, 1);
+                next = Block::new_random(score).moved_to(1, 1);
                 if block_collides(&blk, &bd, &pg) {
                     break;
                 }
