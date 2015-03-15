@@ -357,10 +357,11 @@ enum TileType {
     Killer,
     TwoKiller,
     ThreeKiller,
-    Ghost,
+    Fake,
     Picker,
-    Disguise,
     Centerpiece,
+    Edgepiece,
+    Ghost,
 }
 
 impl TileType {
@@ -372,10 +373,11 @@ impl TileType {
                 12 => return TileType::Two,
                 13 => return TileType::Three,
                 14 => return TileType::Killer,
-                15 => return TileType::Ghost,
+                15 => return TileType::Fake,
                 16 => return TileType::Picker,
-                17 => return TileType::Disguise,
                 18 => return TileType::Centerpiece,
+                19 => return TileType::Edgepiece,
+                20 => return TileType::Ghost,
                 _ => {},
             }
         }
@@ -383,8 +385,7 @@ impl TileType {
 
     fn render(&self) -> &'static str {
         match *self {
-            TileType::Plain |
-            TileType::Disguise  => "   ",
+            TileType::Plain     => "   ",
             TileType::Permanent => " ✖ ",//■
             TileType::One       => " • ",
             TileType::Two       => "• •",
@@ -392,16 +393,18 @@ impl TileType {
             TileType::Killer    => " ↯ ",
             TileType::TwoKiller => "↯ ↯",
             TileType::ThreeKiller => "↯↯↯",
-            TileType::Ghost     => " _ ",
+            TileType::Fake      => " _ ",
             TileType::Picker    => "⟦ ⟧",
             TileType::Centerpiece => " ◉ ",
+            TileType::Edgepiece => " ▣ ",
+            TileType::Ghost     => " ⌀ ",
         }
     }
 
     fn drop(&self) -> Option<TileType> {
         match *self {
-            TileType::Ghost => None,
-            TileType::Disguise => Some(TileType::One),
+            TileType::Fake => None,
+            TileType::Ghost => Some(TileType::Plain),
             n => Some(n),
         }
     }
@@ -414,7 +417,7 @@ impl TileType {
             TileType::Three => Some(TileType::Two),
             TileType::Killer => Some(TileType::TwoKiller),
             TileType::TwoKiller => Some(TileType::ThreeKiller),
-            TileType::ThreeKiller => Some(TileType::ThreeKiller),
+            TileType::ThreeKiller => Some(TileType::Three),
             _ => None,
         }
     }
@@ -426,20 +429,20 @@ impl TileType {
             TileType::One |
             TileType::Two |
             TileType::Three |
+            TileType::Fake |
             TileType::Ghost |
             TileType::Killer |
             TileType::TwoKiller |
-            TileType::ThreeKiller => true,
+            TileType::ThreeKiller |
+            TileType::Edgepiece => true,
             _ => false,
         }
     }
 
     fn explodes(&self, tt2: TileType) -> bool {
         match *self {
-            // If these are centerpieces, the block doesn't explode.
-            TileType::Killer |
-            TileType::TwoKiller |
-            TileType::ThreeKiller => false,
+            // If Edgepieces are centerpieces, the block doesn't explode.
+            TileType::Edgepiece => false,
 
             // Plain tiles explode other plain tiles (i.e. not
             // Centerpieces).
@@ -465,6 +468,14 @@ impl TileType {
             (TileType::Killer, _) => (None, None),
             (_, TileType::Killer) => (None, None),
             (m, n) => (Some(m), Some(n)),
+        }
+    }
+
+    fn collides(t1: TileType, t2: TileType) -> bool {
+        match (t1, t2) {
+            (TileType::Ghost, _) |
+            (_, TileType::Ghost) => false,
+            _ => true,
         }
     }
 
@@ -655,14 +666,18 @@ impl Block {
             let xx1 = x1 + dx1;
             let yy1 = y1 + dy1;
             if let Some(tt2) = blk2.at(xx1, yy1) {
-                let (nt1, nt2) = TileType::collide(tt1, tt2);
-                if let Some(ntt1) = nt1 {
-                    rtiles1.push((dx1, dy1, ntt1));
-                }
-                rtiles2.retain(|&(dx2, dy2, _): &(i16, i16, TileType)|
-                               x2 + dx2 != xx1 || y2 + dy2 != yy1);
-                if let Some(ntt2) = nt2 {
-                    rtiles2.push((xx1 - blk2.x, yy1 - blk2.y, ntt2));
+                if TileType::collides(tt1, tt2) {
+                    let (nt1, nt2) = TileType::collide(tt1, tt2);
+                    if let Some(ntt1) = nt1 {
+                        rtiles1.push((dx1, dy1, ntt1));
+                    }
+                    rtiles2.retain(|&(dx2, dy2, _): &(i16, i16, TileType)|
+                                   x2 + dx2 != xx1 || y2 + dy2 != yy1);
+                    if let Some(ntt2) = nt2 {
+                        rtiles2.push((xx1 - blk2.x, yy1 - blk2.y, ntt2));
+                    }
+                } else {
+                    rtiles1.push((dx1, dy1, tt1));
                 }
             } else {
                 rtiles1.push((dx1, dy1, tt1));
@@ -673,23 +688,43 @@ impl Block {
          Block {x:blk2.x, y:blk2.y, tiles:rtiles2})
     }
 
-    fn drop(self, dest: &mut Block) {
-        let Block {x:x0, y:y0, tiles} = self;
-        let &mut Block {x:x1, y:y1, tiles:ref mut dtiles} = dest;
-        let ddx = x0 - x1;
-        let ddy = y0 - y1;
-        for (dx, dy, tt) in tiles {
-            if let Some(tt2) = tt.drop() {
-                dtiles.push((dx + ddx, dy + ddy, tt2));
+    fn intersects(&self, blk2: &Block) -> bool {
+        let &Block {x:x1, y:y1, ref tiles} = self;
+        for &(dx1, dy1, _) in tiles {
+            let xx1 = x1 + dx1;
+            let yy1 = y1 + dy1;
+            if let Some(_) = blk2.at(xx1, yy1) {
+                return true;
             }
         }
+        false
+    }
+
+    fn drop(&self, dest: &mut Block, bd: &Block) -> bool {
+        if self.intersects(bd) || self.intersects(dest) {
+            return false;
+        }
+
+        let &Block {x:x1, y:y1, ref tiles} = self;
+        let &mut Block {x:x2, y:y2, tiles:ref mut dtiles} = dest;
+        let ddx = x1 - x2;
+        let ddy = y1 - y2;
+        for &(dx1, dy1, tt1) in tiles {
+            if let Some(ntt) = tt1.drop() {
+                dtiles.push((dx1 + ddx, dy1 + ddy, ntt));
+            }
+        }
+
+        true
     }
 
     fn collides_with(&self, with: &Block) -> bool {
         let &Block {x:x0, y:y0, ref tiles} = self;
-        for &(dx, dy, _) in tiles {
-            if let Some(_) = with.at(x0+dx, y0+dy) {
-                return true;
+        for &(dx, dy, tt1) in tiles {
+            if let Some(tt2) = with.at(x0+dx, y0+dy) {
+                if TileType::collides(tt1, tt2) {
+                    return true;
+                }
             }
         }
         false
@@ -755,7 +790,7 @@ fn main() {
     nc::noecho();
     nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
 
-    let (pgw, pgh) = (17 as i16, 17 as i16);
+    let (pgw, pgh) = (16 as i16, 12 as i16);
     let mut blk = Block::new_random().moved_to(2, 2);
     let mut next = Block::new_random().moved_to(1, 1);
     let bd = Block::new_border(pgw, pgh);
@@ -800,7 +835,7 @@ fn main() {
         }
 
         fn try_move(moved: Block, blk: Block, bd: &Block, pg: &mut Block) -> Block {
-            if moved.collides_with(bd) {
+            if moved.intersects(bd) {
                 blk
             } else if moved.collides_with(pg) {
                 let (moved2, pg2) = Block::collide(moved, pg);
@@ -845,12 +880,13 @@ fn main() {
         }
 
         if blk.tiles.is_empty() || drop {
-            blk.drop(&mut pg);
-            pg.explode();
-            blk = next.moved(1, 1);
-            next = Block::new_random().moved_to(1, 1);
-            if block_collides(&blk, &bd, &pg) {
-                break;
+            if blk.drop(&mut pg, &bd) {
+                pg.explode();
+                blk = next.moved(1, 1);
+                next = Block::new_random().moved_to(1, 1);
+                if block_collides(&blk, &bd, &pg) {
+                    break;
+                }
             }
         }
     }
