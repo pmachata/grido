@@ -355,8 +355,11 @@ enum TileType {
     Two,
     Three,
     Killer,
+    TwoKiller,
+    ThreeKiller,
     Ghost,
     Picker,
+    Disguise,
 }
 
 impl TileType {
@@ -364,12 +367,13 @@ impl TileType {
         loop {
             match rand() {
                 0...10 => return TileType::Plain,
-                11...12 => return TileType::One,
-                13 => return TileType::Two,
-                14 => return TileType::Three,
-                15 => return TileType::Killer,
-                16 => return TileType::Ghost,
-                17 => return TileType::Picker,
+                11 => return TileType::One,
+                12 => return TileType::Two,
+                13 => return TileType::Three,
+                14 => return TileType::Killer,
+                15 => return TileType::Ghost,
+                16 => return TileType::Picker,
+                17 => return TileType::Disguise,
                 _ => {},
             }
         }
@@ -377,20 +381,24 @@ impl TileType {
 
     fn render(&self) -> &'static str {
         match *self {
-            TileType::Plain     => "  ",
+            TileType::Plain |
+            TileType::Disguise  => "   ",
             TileType::Permanent => " ✖ ",//■
             TileType::One       => " • ",
             TileType::Two       => "• •",
             TileType::Three     => "•••",
-            TileType::Killer    => " ◇ ",
+            TileType::Killer    => " ↯ ",
+            TileType::TwoKiller => "↯ ↯",
+            TileType::ThreeKiller => "↯↯↯",
             TileType::Ghost     => " _ ",
-            TileType::Picker    => "❬ ❭",
+            TileType::Picker    => "⟦ ⟧",
         }
     }
 
     fn drop(&self) -> Option<TileType> {
         match *self {
             TileType::Ghost => None,
+            TileType::Disguise => Some(TileType::One),
             n => Some(n),
         }
     }
@@ -401,6 +409,9 @@ impl TileType {
             TileType::One => Some(TileType::Plain),
             TileType::Two => Some(TileType::One),
             TileType::Three => Some(TileType::Two),
+            TileType::Killer => Some(TileType::TwoKiller),
+            TileType::TwoKiller => Some(TileType::ThreeKiller),
+            TileType::ThreeKiller => Some(TileType::ThreeKiller),
             _ => None,
         }
     }
@@ -412,17 +423,24 @@ impl TileType {
             TileType::One |
             TileType::Two |
             TileType::Three |
-            TileType::Ghost => true,
+            TileType::Ghost |
+            TileType::Killer |
+            TileType::TwoKiller |
+            TileType::ThreeKiller => true,
             _ => false,
         }
     }
 
     fn collide(t1: TileType, t2: TileType) -> (Option<TileType>, Option<TileType>) {
         match (t1, t2) {
-            (_, TileType::Killer) => (None, None),
+            (TileType::Picker, _) => (t2.drop(), None),
+            (_, TileType::Picker) => (None, t1.drop()),
+            (TileType::ThreeKiller, _) => (Some(TileType::TwoKiller), None),
+            (_, TileType::ThreeKiller) => (None, Some(TileType::TwoKiller)),
+            (TileType::TwoKiller, _) => (Some(TileType::Killer), None),
+            (_, TileType::TwoKiller) => (None, Some(TileType::Killer)),
             (TileType::Killer, _) => (None, None),
-            (TileType::Picker, _) => (Some(t2), None),
-            (_, TileType::Picker) => (None, Some(t1)),
+            (_, TileType::Killer) => (None, None),
             (m, n) => (Some(m), Some(n)),
         }
     }
@@ -765,6 +783,7 @@ fn main() {
             }
         };
 
+        let mut drop = false;
         match nc::getch() {
             nc::KEY_LEFT => blk = try_move(blk.moved(-1, 0), blk, &bd, &mut pg),
             nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &mut pg),
@@ -780,12 +799,7 @@ fn main() {
 
             n => match n as u8 as char {
                 '\t' => blk = try_move(blk.turned(), blk, &bd, &mut pg),
-                '\r' => {
-                    blk.drop(&mut pg);
-                    pg.explode();
-                    blk = next.moved(1, 1);
-                    next = Block::new_random().moved_to(1, 1);
-                },
+                '\r' => drop = true,
                 ' ' => blk = Block::new_random().moved_to(2, 2),
                 'q' => break,
                 _ => {
@@ -798,20 +812,16 @@ fn main() {
             }
         }
 
-        if blk.tiles.is_empty() {
+        if blk.tiles.is_empty() || drop {
+            blk.drop(&mut pg);
+            pg.explode();
             blk = next.moved(1, 1);
             next = Block::new_random().moved_to(1, 1);
+            if block_collides(&blk, &bd, &pg) {
+                break;
+            }
         }
     }
-
-    /*
-    block_find_at(blk, Coord {x:1, y:1});
-
-    grid.paint(0, 0, Direction::Right, Pen::Thin);
-    grid.paint(0, 0, Direction::Down, Pen::Thik);
-    grid.paint(5, 5, Direction::Left, Pen::Thin);
-    grid.paint(5, 5, Direction::Up, Pen::Thin);
-     */
 
     nc::endwin();
 }
