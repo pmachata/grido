@@ -1,9 +1,11 @@
+#![feature(std_misc)]
+
 extern crate ncurses;
+extern crate time;
 
 use ncurses as nc;
-use std::fmt::{Display, Formatter};
 
-#[derive(Copy)]
+#[derive(Copy, Debug)]
 enum Pen {
     None,
     Thin,
@@ -22,17 +24,7 @@ impl Pen {
     }
 }
 
-impl Display for Pen {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            Pen::None => "n",
-            Pen::Thin => "t",
-            Pen::Thik => "T",
-        })
-    }
-}
-
-#[derive(Copy)]
+#[derive(Copy, Debug)]
 enum Direction {
     Up,
     Right,
@@ -40,7 +32,7 @@ enum Direction {
     Left,
 }
 
-#[derive(Copy)]
+#[derive(Copy, Debug)]
 struct FieldDrawing {
     up: Pen,
     right: Pen,
@@ -73,13 +65,14 @@ impl FieldDrawing {
     }
 }
 
-#[derive(Copy)]
+#[derive(Copy, Debug)]
 enum Field {
     None,
     Decoration(char),
     Drawing(FieldDrawing),
 }
 
+#[derive(Debug)]
 struct Grid {
     w: i16,
     h: i16,
@@ -347,54 +340,82 @@ fn rand() -> u8 {
     }
 }
 
-#[derive(Copy,PartialEq)]
+fn randint(range: u8) -> u8 {
+    (rand() as u16 * range as u16 / 256u16) as u8
+}
+
+fn randbool() -> bool {
+    randint(2) == 0
+}
+
+fn level(score: u32) -> u8 {
+    let mut base: u32 = 32;
+    let mut lvl: u8 = 0;
+    while base < score {
+        base = base + 3 * base / 4;
+        lvl += 1;
+    }
+    lvl
+}
+
+#[derive(Copy,PartialEq,Debug)]
+enum LiquidType {
+    Acid,
+    Glue,
+}
+
+#[derive(Copy,PartialEq,Debug)]
 enum TileType {
     Plain(u8),
     Permanent,
     Killer(u8),
-    Fake,
     Picker,
     Centerpiece(u8),
-    Edgepiece,
+    Flask(LiquidType, u8),
+    Spillage(LiquidType),
+    Plus,
+    Minus,
+}
+
+#[derive(PartialEq,Debug)]
+enum ExplodeAction {
+    Remove,
+    Convert(TileType),
+    Spill(LiquidType),
+    Plus,
+    Minus,
+    Complex(Box<ExplodeAction>, Box<ExplodeAction>),
 }
 
 impl TileType {
-    fn level(score: u32) -> u8 {
-        let ret = score / 500;
-        if ret > 255 {
-            255
-        } else {
-            ret as u8
-        }
-    }
-
     fn new_random(score: u32) -> TileType {
-        let lvl = TileType::level(score);
+        let lvl = level(score);
         loop {
-            match rand() {
-                0...10
-                    => return TileType::Plain(rand() % (lvl / 10 + 1)),
+            match randint(32) {
+                0...20
+                    => return TileType::Plain(0),
 
-                11 if lvl > 0
-                    => return TileType::Plain(1 + rand() % lvl),
+                21...22 if lvl > 0
+                    => return TileType::Plain(1 + randint(lvl)),
 
-                12 if lvl > 1
-                    => return TileType::Centerpiece(1 + rand() % (lvl / 2)),
+                23...24 if lvl > 3
+                    => return TileType::Centerpiece(1 + randint(lvl / 4)),
 
-                13 if lvl > 4
-                    => return TileType::Killer(1 + rand() % (lvl / 4)),
+                25 if lvl > 4
+                    => return TileType::Killer(1 + randint(lvl / 4)),
 
-                14...15 => return TileType::Picker,
+                26...28 => return TileType::Picker,
 
-                16 if lvl > 8
-                    => return TileType::Fake,
+                29 if lvl > 2
+                    => return TileType::Flask(if randbool() { LiquidType::Acid }
+                                              else { LiquidType::Glue }, 1),
 
-                17 if lvl > 8
+                30 if lvl > 8 && randbool()
                     => return TileType::Permanent,
 
-                /*
-                20 => return TileType::Edgepiece,
-                 */
+                31
+                    => return if randbool() { TileType::Minus } else { TileType::Plus },
+
                 _ => {},
             }
         }
@@ -402,7 +423,7 @@ impl TileType {
 
     fn render(&self) -> &'static str {
         match *self {
-            TileType::Permanent => " ✖ ",//■
+            TileType::Permanent => " ✖ ",
             TileType::Plain(n) => match n {
                 0 => "   ",
                 1 => " • ",
@@ -429,8 +450,7 @@ impl TileType {
                 9 => " ↯⁹",
                 _ => " ↯ⁿ",
             },
-            TileType::Fake      => " _ ",
-            TileType::Picker    => "⟦ ⟧",
+            TileType::Picker    => "[ ]",
             TileType::Centerpiece(n) => match n {
                 0 => " ◉⁰",
                 1 => " ◉ ",
@@ -444,45 +464,87 @@ impl TileType {
                 9 => " ◉⁹",
                 _ => " ◉ⁿ",
             },
-            TileType::Edgepiece => " ▣ ",
+            TileType::Flask(LiquidType::Glue, n) => match n {
+                0 => " ▿⁰",
+                1 => " ▿ ",
+                2 => " ▿²",
+                3 => " ▿³",
+                4 => " ▿⁴",
+                5 => " ▿⁵",
+                6 => " ▿⁶",
+                7 => " ▿⁷",
+                8 => " ▿⁸",
+                9 => " ▿⁹",
+                _ => " ▿ⁿ",
+            },
+            TileType::Flask(LiquidType::Acid, n) => match n {
+                0 => " ▴⁰",
+                1 => " ▴ ",
+                2 => " ▴²",
+                3 => " ▴³",
+                4 => " ▴⁴",
+                5 => " ▴⁵",
+                6 => " ▴⁶",
+                7 => " ▴⁷",
+                8 => " ▴⁸",
+                9 => " ▴⁹",
+                _ => " ▴ⁿ",
+            },
+            TileType::Plus     => " + ",
+            TileType::Minus    => " - ",
+
+            // Spills are formatted differently.
+            TileType::Spillage(LiquidType::Glue) => "▿",
+            TileType::Spillage(LiquidType::Acid) => "▴",
         }
     }
 
     fn drop(&self) -> Option<TileType> {
         match *self {
-            TileType::Fake => None,
-            n => Some(n),
+            TileType::Killer(n) => Some(TileType::Plain(n)),
+            tt => Some(tt),
         }
     }
 
-    fn explode(&self) -> Option<TileType> {
+    fn explode(&self) -> ExplodeAction {
+        use ExplodeAction::*;
         match *self {
-            TileType::Permanent => Some(TileType::Permanent),
+            TileType::Plain(0) => Remove,
+            TileType::Plain(n) => Convert(TileType::Plain(n - 1)),
 
-            TileType::Plain(0) => None,
-            TileType::Plain(n) => Some(TileType::Plain(n - 1)),
+            TileType::Centerpiece(1) => Remove,
+            TileType::Centerpiece(n) => Convert(TileType::Centerpiece(n - 1)),
 
-            TileType::Centerpiece(1) => None,
-            TileType::Centerpiece(n) => Some(TileType::Centerpiece(n - 1)),
+            TileType::Flask(liquid, 1) => Spill(liquid),
+            TileType::Flask(liquid, n) => Complex(Box::new(Convert(TileType::Flask(liquid, n - 1))),
+                                                  Box::new(Spill(liquid))),
 
-            _ => None,
+            TileType::Plus => Complex(Box::new(Remove), Box::new(Plus)),
+            TileType::Minus => Complex(Box::new(Remove), Box::new(Minus)),
+
+            _ => Remove,
         }
     }
 
     fn is_plain(&self) -> bool {
         match *self {
             TileType::Plain(_) |
-            TileType::Fake |
-            TileType::Edgepiece => true,
+            TileType::Flask(..) |
+            TileType::Plus |
+            TileType::Minus => true,
             _ => false,
+        }
+    }
+
+    fn is_solid(&self) -> bool {
+        match *self {
+            TileType::Spillage(_) => false,
+            _ => true,
         }
     }
 
     fn explodes(&self, tt2: TileType) -> bool {
         match *self {
-            // If Edgepieces are centerpieces, the block doesn't explode.
-            TileType::Edgepiece => false,
-
             // Plain tiles explode other plain tiles (i.e. not
             // Centerpieces).
             tt1 if tt1.is_plain() => tt2.is_plain(),
@@ -504,6 +566,10 @@ impl TileType {
 
     fn collide(t1: TileType, t2: TileType) -> (Option<TileType>, Option<TileType>) {
         match (t1, t2) {
+            // Liquids are never on the block.
+            (_, TileType::Spillage(LiquidType::Acid)) => (None, None),
+            (_, TileType::Spillage(LiquidType::Glue)) => (None, t1.drop()),
+
             (TileType::Picker, _) => (t2.drop(), None),
             (_, TileType::Picker) => (None, t1.drop()),
 
@@ -533,8 +599,17 @@ impl TileType {
             },
         }
     }
+
+    fn bonus(&self) -> u32 {
+        match *self {
+            TileType::Plain(n) => n as u32 + 1,
+            TileType::Centerpiece(n) => 2 * (n as u32 + 1),
+            _ => 1,
+        }
+    }
 }
 
+#[derive(Debug)]
 struct Block {
     x: i16,
     y: i16,
@@ -593,17 +668,15 @@ impl Block {
             &SHAPE
         }
 
-        loop {
-            match rand() {
-                0 => return Block::new_from_shape(shape_1x1(), score),
-                1 => return Block::new_from_shape(shape_1x2(), score),
-                2 => return Block::new_from_shape(shape_1x3(), score),
-                3 => return Block::new_from_shape(shape_8(), score),
-                4 => return Block::new_from_shape(shape_d(), score),
-                5 => return Block::new_from_shape(shape_l(), score),
-                6 => return Block::new_from_shape(shape_castle(), score),
-                _ => {},
-            }
+        return match rand() % 7 {
+            0 => Block::new_from_shape(shape_1x1(), score),
+            1 => Block::new_from_shape(shape_1x2(), score),
+            2 => Block::new_from_shape(shape_1x3(), score),
+            3 => Block::new_from_shape(shape_8(), score),
+            4 => Block::new_from_shape(shape_d(), score),
+            5 => Block::new_from_shape(shape_l(), score),
+            6 => Block::new_from_shape(shape_castle(), score),
+            _ => unreachable!(),
         }
     }
 
@@ -625,10 +698,11 @@ impl Block {
 
     fn paint_tile(x0: i16, y0: i16, w: i16, h: i16, grid: &mut Grid,
                   have_up: bool, have_right: bool,
-                  have_down: bool, have_left: bool) {
+                  have_down: bool, have_left: bool,
+                  pen1: Pen, pen2: Pen) {
         let x1 = x0 + w;
         let y1 = y0 + h;
-        let pen = |b: bool| { if b { Pen::Thin } else { Pen::Thik } };
+        let pen = |b: bool| { if b { pen1 } else { pen2 } };
 
         for &(x, y, len, d, n) in [(x0, y0, w, Direction::Right, have_up),
                                    (x1, y0, h, Direction::Down, have_right),
@@ -638,28 +712,53 @@ impl Block {
         }
     }
 
+    fn paint1(&self, x: i16, y: i16, tt: TileType, grid: &mut Grid) {
+        let up = self.at(x, y-1);
+        let right = self.at(x+1, y);
+        let down = self.at(x, y+1);
+        let left = self.at(x-1, y);
+
+        // A tile is 5x3, but the walls are shared, so we place
+        // them to dx*4, dy*2.
+        let tx = 4 * x;
+        let ty = 2 * y;
+        grid.clear(tx, ty, 5, 3);
+
+        if tt.is_solid() {
+            fn is_solid_neighbor(n: Option<TileType>) -> bool {
+                if let Some(tt) = n {
+                    tt.is_solid()
+                } else {
+                    false
+                }
+            }
+
+            Block::paint_tile(tx, ty, 4, 2, grid,
+                              is_solid_neighbor(up), is_solid_neighbor(right),
+                              is_solid_neighbor(down), is_solid_neighbor(left),
+                              Pen::Thin, Pen::Thik);
+            grid.paint_decoration(tx + 1, ty + 1, tt.render());
+        } else {
+            let c = tt.render();
+            grid.paint_decoration(tx, ty+0, &format!(" {} {} ", c, c));
+            grid.paint_decoration(tx, ty+1, &format!("{} {} {}", c, c, c));
+            grid.paint_decoration(tx, ty+2, &format!(" {} {} ", c, c));
+        }
+    }
+
     fn paint(&self, grid: &mut Grid) {
         let &Block {x:x0, y:y0, ref tiles} = self;
 
         for &(dx, dy, tt) in tiles {
-            let x = x0 + dx;
-            let y = y0 + dy;
+            if ! tt.is_solid() {
+                self.paint1(x0 + dx, y0 + dy, tt, grid);
+            }
+        }
 
-            let up = self.at(x, y-1);
-            let right = self.at(x+1, y);
-            let down = self.at(x, y+1);
-            let left = self.at(x-1, y);
-
-            // A tile is 5x3, but the walls are shared, so we place
-            // them to dx*4, dy*2.
-            let tx = 4 * x;
-            let ty = 2 * y;
-            grid.clear(tx, ty, 5, 3);
-
-            Block::paint_tile(tx, ty, 4, 2, grid,
-                              up.is_some(), right.is_some(),
-                              down.is_some(), left.is_some());
-            grid.paint_decoration(tx + 1, ty + 1, tt.render());
+        for &(dx, dy, tt) in tiles {
+            if tt.is_solid() {
+                self.paint1(x0 + dx, y0 + dy, tt, grid);
+            }
         }
     }
 
@@ -774,7 +873,13 @@ impl Block {
         false
     }
 
-    fn explode(&mut self) -> u32 {
+    fn spill(x: i16, y: i16, spills: &mut Vec<(i16, i16, LiquidType)>, liquid: LiquidType) {
+        for &(dx, dy) in &[(0, 0), (0, 1), (1, 0), (0, -1), (-1, 0)] {
+            spills.push((x+dx, y+dy, liquid));
+        }
+    }
+
+    fn explode(&mut self) -> (Vec<(i16, i16, TileType)>, u32, i32) {
         let mut killlist = Vec::new();
 
         {
@@ -798,14 +903,44 @@ impl Block {
             }
         }
 
+        let mut exploded = Vec::new();
+
+        fn handle_xp_action(xa: ExplodeAction, xx: i16, yy: i16,
+                            spills: &mut Vec<(i16, i16, LiquidType)>,
+                            rtiles: &mut Vec<(i16, i16, TileType)>) -> i32 {
+            match xa {
+                ExplodeAction::Remove => {
+                    0
+                },
+                ExplodeAction::Convert(tt2) => {
+                    rtiles.push((xx, yy, tt2));
+                    0
+                },
+                ExplodeAction::Spill(liquid) => {
+                    Block::spill(xx, yy, spills, liquid);
+                    0
+                },
+                ExplodeAction::Plus => 1,
+                ExplodeAction::Minus => -1,
+                ExplodeAction::Complex(a, b) => {
+                    handle_xp_action(*a, xx, yy, spills, rtiles)
+                        + handle_xp_action(*b, xx, yy, spills, rtiles)
+                },
+            }
+        };
+
+        let mut hits = 0;
+        let mut dmult = 0;
         {
             let mut rtiles = Vec::new();
+            let mut spills = Vec::new();
             'next: for &(xx, yy, tt) in &self.tiles {
                 for &(x2, y2) in &killlist {
                     if self.x + xx == x2 && self.y + yy == y2 {
-                        if let Some(tt2) = tt.explode() {
-                            rtiles.push((xx, yy, tt2));
-                        }
+                        exploded.push((xx, yy, tt));
+                        dmult += handle_xp_action(tt.explode(), xx, yy,
+                                                  &mut spills, &mut rtiles);
+                        hits += tt.bonus();
                         continue 'next;
                     }
                 }
@@ -813,9 +948,43 @@ impl Block {
             }
 
             self.tiles = rtiles;
+
+            for (xx, yy, liquid) in spills {
+                if ! self.at(xx, yy).is_some() {
+                    self.tiles.push((xx, yy, TileType::Spillage(liquid)));
+                }
+            }
         }
 
-        (killlist.len() * killlist.len()) as u32
+        if exploded.len() > 12 {
+            dmult += (exploded.len() as i32 - 9) / 9;
+        }
+
+        (exploded, hits, dmult)
+    }
+}
+
+#[derive(Debug)]
+struct Particle {
+    x: f32,
+    y: f32,
+    face: String,
+    start: time::SteadyTime,
+    ttl: u32,
+}
+
+impl Particle {
+    fn new(x: f32, y: f32, face: String, ttl: u32) -> Particle {
+        Particle {x: x, y: y, face: face, start: time::SteadyTime::now(), ttl: ttl}
+    }
+
+    fn paint(&self, grid: &mut Grid) {
+        grid.paint_decoration(self.x as i16, self.y as i16, &self.face);
+    }
+
+    fn dead(&self) -> bool {
+        let ttl = std::time::duration::Duration::milliseconds(self.ttl as i64);
+        time::SteadyTime::now() - self.start > ttl
     }
 }
 
@@ -828,6 +997,11 @@ fn main() {
         setlocale(0 /* = LC_CTYPE */, "\0".as_ptr());
     }
 
+    // Seed the random generator.
+    for _ in 0 .. time::now().tm_nsec % 100 {
+        rand();
+    }
+
     nc::initscr();
     nc::keypad(nc::stdscr, true);
     nc::nonl();
@@ -835,6 +1009,7 @@ fn main() {
     nc::raw();
     nc::noecho();
     nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
+    nc::timeout(20);
 
     let (pgw, pgh) = (16 as i16, 12 as i16);
     let mut score = 0;
@@ -842,8 +1017,18 @@ fn main() {
     let mut next = Block::new_random(score).moved_to(1, 1);
     let bd = Block::new_border(pgw, pgh);
     let mut pg = Block::new();
+    let mut particles: Vec<Particle> = Vec::new();
+
+    let mut last_drop_time = time::SteadyTime::now();
+
+    let mut multiplier: u32 = 1;
+    let mut last_mult_time = last_drop_time;
 
     loop {
+        let mut drop = false;
+        let mut mult_drop = false;
+
+        particles.retain(|p: &Particle| ! p.dead());
         {
             let mut grid = Grid::new(4 * pgw, 2 * pgh);
             for xx in 0..grid.w {
@@ -871,11 +1056,67 @@ fn main() {
             let mut gridlet = Grid::new(12, 6);
             next.paint(&mut gridlet);
 
+            fn paint_gauge(start: &time::SteadyTime, limit: i64) -> (String, bool) {
+                let dtime = time::SteadyTime::now() - *start;
+                let mut remaining = limit - dtime.num_milliseconds();
+                if remaining < 0 {
+                    remaining = 0;
+                }
+
+                // 96 is 12 * 8: 12 characters times 8 different widths of
+                // unicode block.
+                let frac = (96.0 * (limit as f32 - remaining as f32) / limit as f32) as i32;
+                let mut timebar = "◂".to_string();
+                for _ in 0 .. (frac / 8) {
+                    timebar.push_str("█");
+                }
+                if remaining > 0 {
+                    timebar.push_str(match frac % 8 {
+                        0 => " ",
+                        1 => "▏",
+                        2 => "▎",
+                        3 => "▍",
+                        4 => "▌",
+                        5 => "▋",
+                        6 => "▊",
+                        7 => "▉",
+                        _ => "",
+                    });
+                }
+                for _ in (frac / 8) .. 11 {
+                    timebar.push_str(" ");
+                }
+                timebar.push_str("▸");
+
+                (timebar, remaining == 0)
+            }
+
+            let (timebar, over) = paint_gauge(&last_drop_time, 15000);
+            if over {
+                drop = true;
+            }
+
+            let (mult_timebar, mult_over) = paint_gauge(&last_mult_time, 60000);
+            if mult_over && multiplier != 1 {
+                mult_drop = true;
+            }
+
+            for p in &particles {
+                p.paint(&mut grid);
+            }
+
             nc::erase();
             grid.render(0, 0);
             gridlet.render(grid.w + 1, 0);
-            nc::mvprintw(gridlet.h as i32 + 1, grid.w as i32 + 1,
+            nc::mvprintw(gridlet.h as i32 + 1, grid.w as i32 + 1, &timebar);
+            nc::mvprintw(gridlet.h as i32 + 2, grid.w as i32 + 1,
                          &format!("Score: {}", score));
+            nc::mvprintw(gridlet.h as i32 + 3, grid.w as i32 + 1,
+                         &format!("Level: {}", level(score)));
+
+            nc::mvprintw(gridlet.h as i32 + 5, grid.w as i32 + 1, &mult_timebar);
+            nc::mvprintw(gridlet.h as i32 + 6, grid.w as i32 + 1,
+                         &format!("Multi: x{}", multiplier));
             nc::refresh();
         }
 
@@ -899,7 +1140,6 @@ fn main() {
             }
         };
 
-        let mut drop = false;
         match nc::getch() {
             nc::KEY_LEFT => blk = try_move(blk.moved(-1, 0), blk, &bd, &mut pg),
             nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &mut pg),
@@ -915,9 +1155,26 @@ fn main() {
 
             n => match n as u8 as char {
                 '\t' => blk = try_move(blk.turned(), blk, &bd, &mut pg),
-                '\r' => drop = true,
+                '\r' => {
+                    let grace = std::time::duration::Duration::milliseconds(500);
+                    if time::SteadyTime::now() - last_drop_time > grace {
+                        drop = true;
+                    }
+                },
                 ' ' => blk = Block::new_random(score).moved_to(2, 2),
+                '+' => score += 500,
                 'q' => break,
+                'p' => {
+                    let pause_start = time::SteadyTime::now();
+                    nc::erase();
+                    nc::mvprintw(pgh as i32, 2 * pgw as i32 - 3, "Pause.");
+                    nc::timeout(-1);
+                    nc::getch();
+                    nc::timeout(20);
+                    let now = time::SteadyTime::now();
+                    last_drop_time = last_drop_time + (now - pause_start);
+                    last_mult_time = last_mult_time + (now - pause_start);
+                },
                 _ => {
                     /*
                     nc::endwin();
@@ -930,13 +1187,42 @@ fn main() {
 
         if blk.tiles.is_empty() || drop {
             if blk.drop(&mut pg, &bd) {
-                score += pg.explode();
+                last_drop_time = time::SteadyTime::now();
+                let (_, hits, dmult) = pg.explode();
+                let bonus = hits * multiplier;
+                score += bonus;
+
+                if dmult != 0 {
+                    multiplier += dmult as u32;
+                    last_mult_time = time::SteadyTime::now();
+                }
+
+                if bonus > 0 {
+                    particles.push(Particle::new(4. * blk.x as f32, 2. * blk.y as f32,
+                                                 format!("{}", bonus), 5000));
+                }
+
+                if dmult > 0 {
+                    particles.push(Particle::new(4. * blk.x as f32, 1. + 2. * blk.y as f32,
+                                                 format!("+x{}", dmult), 5000));
+                } else if dmult < 0 {
+                    particles.push(Particle::new(4. * blk.x as f32, 1. + 2. * blk.y as f32,
+                                                 format!("-x{}", -dmult), 5000));
+                }
+
                 blk = next.moved(1, 1);
                 next = Block::new_random(score).moved_to(1, 1);
                 if block_collides(&blk, &bd, &pg) {
                     break;
                 }
             }
+        }
+
+        if mult_drop {
+            multiplier += if multiplier > 1 { -1 } else { 1 };
+            last_mult_time = time::SteadyTime::now();
+        } else if multiplier == 1 {
+            last_mult_time = time::SteadyTime::now();
         }
     }
 
