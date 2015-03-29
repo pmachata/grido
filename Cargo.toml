@@ -1,12 +1,12 @@
 # -*-conf-*-
 
 [package]
-name = "hello_world"
+name = "grido"
 version = "0.0.1"
-authors = [ "Your name <you@example.com>" ]
+authors = [ "Petr Machata <pmachata@gmail.com>" ]
 
 [[bin]]
-name = "hello_world"
+name = "grido"
 
 [dependencies]
 ncurses = "5.71.1"
