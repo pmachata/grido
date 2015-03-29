@@ -371,7 +371,8 @@ enum TileType {
     Killer(u8),
     Picker,
     Centerpiece(u8),
-    Flask(LiquidType, u8),
+    Whopper(u8),
+    Flask(LiquidType),
     Spillage(LiquidType),
     Plus,
     Minus,
@@ -391,30 +392,33 @@ impl TileType {
     fn new_random(score: u32) -> TileType {
         let lvl = level(score);
         loop {
-            match randint(32) {
-                0...20
-                    => return TileType::Plain(0),
+            match randint(33) {
+                0...20 => return TileType::Plain(0),
 
-                21...22 if lvl > 0
-                    => return TileType::Plain(1 + randint(lvl)),
+                21...23 => return TileType::Picker,
 
-                23...24 if lvl > 3
-                    => return TileType::Centerpiece(1 + randint(lvl / 4)),
+                24 if lvl >= 1
+                    => return if randbool() { TileType::Minus } else { TileType::Plus },
 
-                25 if lvl > 4
+                25...26 if lvl >= 2
+                    => return TileType::Plain(1 + randint(lvl - 1)),
+
+                27 if lvl >= 3
+                    => return TileType::Flask(if randbool() { LiquidType::Acid }
+                                              else { LiquidType::Glue }),
+
+                28 if lvl >= 4
                     => return TileType::Killer(1 + randint(lvl / 4)),
 
-                26...28 => return TileType::Picker,
 
-                29 if lvl > 2
-                    => return TileType::Flask(if randbool() { LiquidType::Acid }
-                                              else { LiquidType::Glue }, 1),
+                29...30 if lvl >= 5
+                    => return TileType::Centerpiece(1 + randint(lvl / 4)),
 
-                30 if lvl > 8 && randbool()
+                31 if lvl >= 6
+                    => return TileType::Whopper(1 + randint(lvl / 4)),
+
+                32 if lvl >= 8 && randbool()
                     => return TileType::Permanent,
-
-                31
-                    => return if randbool() { TileType::Minus } else { TileType::Plus },
 
                 _ => {},
             }
@@ -423,7 +427,13 @@ impl TileType {
 
     fn render(&self) -> &'static str {
         match *self {
-            TileType::Permanent => " ✖ ",
+            TileType::Permanent               => " ✖ ",
+            TileType::Picker                  => "[ ]",
+            TileType::Flask(LiquidType::Glue) => " ▿ ",
+            TileType::Flask(LiquidType::Acid) => " ▴ ",
+            TileType::Plus                    => " + ",
+            TileType::Minus                   => " - ",
+
             TileType::Plain(n) => match n {
                 0 => "   ",
                 1 => " • ",
@@ -437,6 +447,7 @@ impl TileType {
                 9 => " •⁹",
                 _ => " •ⁿ",
             },
+
             TileType::Killer(n) => match n {
                 0 => " ↯⁰",
                 1 => " ↯ ",
@@ -450,7 +461,7 @@ impl TileType {
                 9 => " ↯⁹",
                 _ => " ↯ⁿ",
             },
-            TileType::Picker    => "[ ]",
+
             TileType::Centerpiece(n) => match n {
                 0 => " ◉⁰",
                 1 => " ◉ ",
@@ -464,34 +475,20 @@ impl TileType {
                 9 => " ◉⁹",
                 _ => " ◉ⁿ",
             },
-            TileType::Flask(LiquidType::Glue, n) => match n {
-                0 => " ▿⁰",
-                1 => " ▿ ",
-                2 => " ▿²",
-                3 => " ▿³",
-                4 => " ▿⁴",
-                5 => " ▿⁵",
-                6 => " ▿⁶",
-                7 => " ▿⁷",
-                8 => " ▿⁸",
-                9 => " ▿⁹",
-                _ => " ▿ⁿ",
+
+            TileType::Whopper(n) => match n {
+                0 => " ✱⁰",
+                1 => " ✱ ",
+                2 => " ✱²",
+                3 => " ✱³",
+                4 => " ✱⁴",
+                5 => " ✱⁵",
+                6 => " ✱⁶",
+                7 => " ✱⁷",
+                8 => " ✱⁸",
+                9 => " ✱⁹",
+                _ => " ✱ⁿ",
             },
-            TileType::Flask(LiquidType::Acid, n) => match n {
-                0 => " ▴⁰",
-                1 => " ▴ ",
-                2 => " ▴²",
-                3 => " ▴³",
-                4 => " ▴⁴",
-                5 => " ▴⁵",
-                6 => " ▴⁶",
-                7 => " ▴⁷",
-                8 => " ▴⁸",
-                9 => " ▴⁹",
-                _ => " ▴ⁿ",
-            },
-            TileType::Plus     => " + ",
-            TileType::Minus    => " - ",
 
             // Spills are formatted differently.
             TileType::Spillage(LiquidType::Glue) => "▿",
@@ -501,7 +498,7 @@ impl TileType {
 
     fn drop(&self) -> Option<TileType> {
         match *self {
-            TileType::Killer(n) => Some(TileType::Plain(n)),
+            TileType::Killer(_) => Some(TileType::Plain(0)),
             tt => Some(tt),
         }
     }
@@ -515,9 +512,9 @@ impl TileType {
             TileType::Centerpiece(1) => Remove,
             TileType::Centerpiece(n) => Convert(TileType::Centerpiece(n - 1)),
 
-            TileType::Flask(liquid, 1) => Spill(liquid),
-            TileType::Flask(liquid, n) => Complex(Box::new(Convert(TileType::Flask(liquid, n - 1))),
-                                                  Box::new(Spill(liquid))),
+            TileType::Whopper(n) => Convert(TileType::Centerpiece(n)),
+
+            TileType::Flask(liquid) => Spill(liquid),
 
             TileType::Plus => Complex(Box::new(Remove), Box::new(Plus)),
             TileType::Minus => Complex(Box::new(Remove), Box::new(Minus)),
@@ -545,17 +542,18 @@ impl TileType {
 
     fn explodes(&self, tt2: TileType) -> bool {
         match *self {
-            // Plain tiles explode other plain tiles (i.e. not
+            // Plain tiles explode other plain tiles (not e.g.
             // Centerpieces).
             tt1 if tt1.is_plain() => tt2.is_plain(),
 
-            // If Centerpieces are centerpieces, they explode other
-            // plain tiles or other Centerpieces.
-            TileType::Centerpiece(_) => {
-                if let TileType::Centerpiece(_) = tt2 {
-                    true
-                } else {
-                    tt2.is_plain()
+            // If Centerpieces or Whopper are centerpieces, they
+            // explode other plain tiles, Centerpieces and Whoppers.
+            TileType::Centerpiece(_) |
+            TileType::Whopper(_) => {
+                match tt2 {
+                    TileType::Centerpiece(_) |
+                    TileType::Whopper(_) => true,
+                    _ => tt2.is_plain(),
                 }
             },
 
@@ -591,6 +589,15 @@ impl TileType {
 
     fn explode_shape(&self) -> &'static [(i16, i16)] {
         match *self {
+            TileType::Whopper(_) => {
+                static SHAPE:[(i16, i16); 25] = [(-2, -2), (-1, -2), (0, -2), (1, -2), (2, -2),
+                                                 (-2, -1), (-1, -1), (0, -1), (1, -1), (2, -1),
+                                                 (-2,  0), (-1,  0), (0,  0), (1,  0), (2,  0),
+                                                 (-2,  1), (-1,  1), (0,  1), (1,  1), (2,  1),
+                                                 (-2,  2), (-1,  2), (0,  2), (1,  2), (2,  2)];
+                &SHAPE
+            },
+
             _ => {
                 static SHAPE:[(i16, i16); 9] = [(-1, -1), (0, -1), (1, -1),
                                                 (-1,  0), (0,  0), (1,  0),
@@ -604,6 +611,7 @@ impl TileType {
         match *self {
             TileType::Plain(n) => n as u32 + 1,
             TileType::Centerpiece(n) => 2 * (n as u32 + 1),
+            TileType::Whopper(n) => 8 * (n as u32 + 1),
             _ => 1,
         }
     }
@@ -618,8 +626,11 @@ struct Block {
 
 impl Block {
     fn new() -> Block {
-        Block {x:0, y:0,
-              tiles:vec![]}
+        Block::new_at(0, 0)
+    }
+
+    fn new_at(x: i16, y: i16) -> Block {
+        Block {x: x, y: y, tiles:vec![]}
     }
 
     fn new_from_shape(shape: &[(i16, i16)], score: u32) -> Block {
@@ -1028,7 +1039,7 @@ fn main() {
         let mut drop = false;
         let mut mult_drop = false;
 
-        particles.retain(|p: &Particle| ! p.dead());
+        particles.retain(|p: &Particle| !p.dead());
         {
             let mut grid = Grid::new(4 * pgw, 2 * pgh);
             for xx in 0..grid.w {
@@ -1140,6 +1151,7 @@ fn main() {
             }
         };
 
+        nc::timeout(20);
         match nc::getch() {
             nc::KEY_LEFT => blk = try_move(blk.moved(-1, 0), blk, &bd, &mut pg),
             nc::KEY_RIGHT => blk = try_move(blk.moved(1, 0), blk, &bd, &mut pg),
@@ -1170,7 +1182,6 @@ fn main() {
                     nc::mvprintw(pgh as i32, 2 * pgw as i32 - 3, "Pause.");
                     nc::timeout(-1);
                     nc::getch();
-                    nc::timeout(20);
                     let now = time::SteadyTime::now();
                     last_drop_time = last_drop_time + (now - pause_start);
                     last_mult_time = last_mult_time + (now - pause_start);
@@ -1193,7 +1204,12 @@ fn main() {
                 score += bonus;
 
                 if dmult != 0 {
-                    multiplier += dmult as u32;
+                    if dmult < 0 && -dmult as u32 >= multiplier {
+                        multiplier = 0
+                    } else {
+                        multiplier += dmult as u32;
+                    }
+
                     last_mult_time = time::SteadyTime::now();
                 }
 
