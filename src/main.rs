@@ -349,11 +349,13 @@ fn randbool() -> bool {
 }
 
 fn level(score: u32) -> u8 {
-    let mut base: u32 = 32;
+    let mut base: u32 = 0;
     let mut lvl: u8 = 0;
     while base < score {
-        base = base + 3 * base / 4;
         lvl += 1;
+        // 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500, 5500,
+        // 6500, 7500, 8500, ...
+        base += (if lvl <= 10 {lvl as u32} else {10}) * 100;
     }
     lvl
 }
@@ -408,7 +410,7 @@ impl TileType {
                                               else { LiquidType::Glue }),
 
                 28 if lvl >= 4
-                    => return TileType::Killer(1 + randint(lvl / 4)),
+                    => return TileType::Killer(1 + randint(lvl / 8)),
 
 
                 29...30 if lvl >= 5
