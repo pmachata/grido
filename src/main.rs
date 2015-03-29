@@ -619,8 +619,8 @@ impl TileType {
     fn bonus(&self) -> u32 {
         match *self {
             TileType::Plain(n) => n as u32 + 1,
-            TileType::Centerpiece(n) => 2 * (n as u32 + 1),
-            TileType::Whopper(n) => 8 * (n as u32 + 1),
+            TileType::Centerpiece(n) => 10 * n as u32,
+            TileType::Whopper(_) => 30,
             _ => 1,
         }
     }
@@ -1300,14 +1300,18 @@ fn help() {
     let mut x = 1;
     for &(tts, descr)
         in &[(&vec![TileType::Plain(0)],
-              "Plain tiles.  When organized\ninto a 3x3, explode\nand disappear."),
+              "Plain tiles.  When organized\ninto a 3x3, explode and\n\
+               disappear.  1 point."),
              (&vec![TileType::Plain(1), TileType::Plain(3)],
-              "Shield tiles.  When exploded,\ndecrease the number, eventually\nchange to plain."),
+              "Shield tiles.  When exploded,\ndecrease the number, eventually\n\
+               change to plain.  n+1 points."),
              (&vec![TileType::Centerpiece(1), TileType::Centerpiece(3)],
-              "Centerpiece.  Only explode\nwhen 3x3 has a centerpiece\nin the center."),
+              "Centerpiece.  Only explode\nwhen 3x3 has a centerpiece\n\
+               in the center.  10*n points."),
              (&vec![TileType::Whopper(1), TileType::Whopper(3)],
               "Whopper.  Like centerpiece\nbut only explodes 5x5.  When\n\
-               exploded, changes to c-piece\nwith the same number."),
+               exploded, changes to c-piece\nwith the same number.\n\
+               30 points."),
              (&vec![TileType::Picker],
               "Picker.  Doesn't explode.\nAllows picking other tiles."),
              (&vec![TileType::Killer(1), TileType::Killer(3)],
@@ -1315,10 +1319,12 @@ fn help() {
              (&vec![TileType::Permanent],
               "Permanent.\nNever explodes.\nKill them!"),
              (&vec![TileType::Plus, TileType::Minus],
-              "Plus, Minus.\nWhen exploded, change\nthe multiplier."),
+              "Plus, Minus.  When exploded,\nchange the multiplier.\n\
+               1 point."),
              (&vec![TileType::Flask(LiquidType::Glue),
                     TileType::Flask(LiquidType::Acid)],
-              "Flask with Glue and Acid.\nSpill contents around\nwhen exploded.")] {
+              "Flask with Glue and Acid.\nSpill contents around\n\
+               when exploded.  1 point.")] {
         {
             let mut blk = Block::new_at(x, y);
             for i in 0..tts.len() {
