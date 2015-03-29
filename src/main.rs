@@ -546,9 +546,18 @@ impl TileType {
             // Centerpieces).
             tt1 if tt1.is_plain() => tt2.is_plain(),
 
-            // If Centerpieces or Whopper are centerpieces, they
-            // explode other plain tiles, Centerpieces and Whoppers.
-            TileType::Centerpiece(_) |
+            // If Centerpieces is a centerpiece, it explodes other
+            // plain tiles or Centerpieces.
+            TileType::Centerpiece(_) => {
+                if let TileType::Centerpiece(_) = tt2 {
+                    true
+                } else {
+                    tt2.is_plain()
+                }
+            },
+
+            // If Whopper is a centerpiece, it explodes other plain
+            // tiles, Centerpieces and Whoppers.
             TileType::Whopper(_) => {
                 match tt2 {
                     TileType::Centerpiece(_) |
