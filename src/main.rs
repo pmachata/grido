@@ -1003,25 +1003,7 @@ extern "C" {
     pub fn setlocale(category: i32, locale: *const u8) -> *const u8;
 }
 
-fn main() {
-    unsafe {
-        setlocale(0 /* = LC_CTYPE */, "\0".as_ptr());
-    }
-
-    // Seed the random generator.
-    for _ in 0 .. time::now().tm_nsec % 100 {
-        rand();
-    }
-
-    nc::initscr();
-    nc::keypad(nc::stdscr, true);
-    nc::nonl();
-    nc::cbreak();
-    nc::raw();
-    nc::noecho();
-    nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
-    nc::timeout(20);
-
+fn play() {
     let (pgw, pgh) = (16 as i16, 12 as i16);
     let mut score = 0;
     let mut blk = Block::new_random(score).moved_to(2, 2);
@@ -1239,6 +1221,143 @@ fn main() {
             last_mult_time = time::SteadyTime::now();
         } else if multiplier == 1 {
             last_mult_time = time::SteadyTime::now();
+        }
+    }
+}
+
+#[derive(Copy)]
+enum MenuAction {
+    Play,
+    Help,
+    Quit,
+}
+
+fn logo() {
+    nc::mvprintw(2, 1, "╶─╼━━━━━━━━━━━╾─╴");
+    nc::mvprintw(3, 1, "╶╼ G R I D - O ╾╴");
+    nc::mvprintw(4, 1, "╶─╼━━━━━━━━━━━╾─╴");
+}
+
+fn menu() -> MenuAction {
+    let mut pos: i32 = 0;
+
+    let items = [("Play", MenuAction::Play),
+                 ("Help", MenuAction::Help),
+                 ("Quit", MenuAction::Quit)];
+
+    loop {
+        nc::erase();
+        logo();
+        for i in 0..items.len() {
+            if i == pos as usize {
+                nc::mvprintw(i as i32 + 6, 1, "➢");
+            }
+            let &(text, _) = &items[i];
+            nc::mvprintw(i as i32 + 6, 3, text);
+        }
+
+        nc::timeout(-1);
+        match nc::getch() {
+            nc::KEY_UP => pos -= 1,
+            nc::KEY_DOWN => pos += 1,
+            n => match n as u8 as char {
+                '\r' => {
+                    let &(_, action) = &items[pos as usize];
+                    return action;
+                },
+                'p' => return MenuAction::Play,
+                'h' => return MenuAction::Help,
+                'q' => return MenuAction::Quit,
+                _ => {},
+            },
+        }
+
+        if pos < 0 {
+            pos = 0;
+        }
+        if pos >= items.len() as i32 {
+            pos = (items.len() - 1) as i32;
+        }
+    }
+}
+
+fn help() {
+    nc::erase();
+    logo();
+
+    let mut grid = Grid::new(80, 24);
+
+    let mut y = 3;
+    let mut x = 1;
+    for &(tts, descr)
+        in &[(&vec![TileType::Plain(0)],
+              "Plain tiles.  When organized\ninto a 3x3, explode\nand disappear."),
+             (&vec![TileType::Plain(1), TileType::Plain(3)],
+              "Shield tiles.  When exploded,\ndecrease the number, eventually\nchange to plain."),
+             (&vec![TileType::Centerpiece(1), TileType::Centerpiece(3)],
+              "Centerpiece.  Only explode\nwhen 3x3 has a centerpiece\nin the center."),
+             (&vec![TileType::Whopper(1), TileType::Whopper(3)],
+              "Whopper.  Like centerpiece\nbut only explodes 5x5.  When\n\
+               exploded, changes to c-piece\nwith the same number."),
+             (&vec![TileType::Picker],
+              "Picker.  Doesn't explode.\nAllows picking other tiles."),
+             (&vec![TileType::Killer(1), TileType::Killer(3)],
+              "Killer.  Kills tiles that\nit touches.  On drop,\nchanges to plain."),
+             (&vec![TileType::Permanent],
+              "Permanent.\nNever explodes.\nKill them!"),
+             (&vec![TileType::Plus, TileType::Minus],
+              "Plus, Minus.\nWhen exploded, change\nthe multiplier."),
+             (&vec![TileType::Flask(LiquidType::Glue),
+                    TileType::Flask(LiquidType::Acid)],
+              "Flask with Glue and Acid.\nSpill contents around\nwhen exploded.")] {
+        {
+            let mut blk = Block::new_at(x, y);
+            for i in 0..tts.len() {
+                blk.tiles.push((-(tts.len() as i16) + i as i16 + 1, 0, tts[i]));
+            }
+            blk.paint(&mut grid);
+
+            let mut dy = 0;
+            for k in descr.split("\n") {
+                grid.paint_decoration(4 * (x + 1) + 2, 2 * y + dy, k);
+                dy += 1
+            }
+        }
+        y += 2;
+        if y > 9 {
+            y = 1;
+            x += 10;
+        }
+    }
+
+    grid.render(0, 0);
+
+    nc::getch();
+}
+
+fn main() {
+    unsafe {
+        setlocale(0 /* = LC_CTYPE */, "\0".as_ptr());
+    }
+
+    // Seed the random generator.
+    for _ in 0 .. time::now().tm_nsec % 100 {
+        rand();
+    }
+
+    nc::initscr();
+    nc::keypad(nc::stdscr, true);
+    nc::nonl();
+    nc::cbreak();
+    nc::raw();
+    nc::noecho();
+    nc::curs_set(nc::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
+
+    loop {
+        match menu() {
+            MenuAction::Play => play(),
+            MenuAction::Help => help(),
+            MenuAction::Quit => break,
         }
     }
 
