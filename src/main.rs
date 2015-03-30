@@ -1261,7 +1261,7 @@ fn menu() -> MenuAction {
         logo();
         for i in 0..items.len() {
             if i == pos as usize {
-                nc::mvprintw(i as i32 + 6, 1, "➢");
+                nc::mvprintw(i as i32 + 6, 1, "➤");
             }
             let &(text, _) = &items[i];
             nc::mvprintw(i as i32 + 6, 3, text);
@@ -1348,6 +1348,17 @@ fn help() {
     }
 
     grid.render(0, 0);
+
+    nc::getch();
+
+    nc::erase();
+    logo();
+    nc::mvprintw(6, 1,  "⬅⬆⬇➡  Arrows: move current block around the playground.");
+    nc::mvprintw(7, 1,  "   ↲  Enter: drop the block.");
+    nc::mvprintw(8, 1,  "   ⇰  Tab: rotate the block.");
+    nc::mvprintw(9, 1,  "   ⇦  Backspace: swap current block with the next block.");
+    nc::mvprintw(12, 1, "   p  Pause game.");
+    nc::mvprintw(13, 1, "   q  Quit game--go back to the menu.");
 
     nc::getch();
 }
