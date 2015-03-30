@@ -353,9 +353,7 @@ fn level(score: u32) -> u8 {
     let mut lvl: u8 = 0;
     while base < score {
         lvl += 1;
-        // 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500, 5500,
-        // 6500, 7500, 8500, ...
-        base += (if lvl <= 10 {lvl as u32} else {10}) * 100;
+        base += lvl as u32 * 100;
     }
     lvl
 }
