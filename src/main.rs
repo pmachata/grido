@@ -1,11 +1,9 @@
-#![feature(std_misc)]
-
 extern crate ncurses;
 extern crate time;
 
 use ncurses as nc;
 
-#[derive(Copy, Debug)]
+#[derive(Copy, Clone, Debug)]
 enum Pen {
     None,
     Thin,
@@ -24,7 +22,7 @@ impl Pen {
     }
 }
 
-#[derive(Copy, Debug)]
+#[derive(Copy, Clone, Debug)]
 enum Direction {
     Up,
     Right,
@@ -32,7 +30,7 @@ enum Direction {
     Left,
 }
 
-#[derive(Copy, Debug)]
+#[derive(Copy, Clone, Debug)]
 struct FieldDrawing {
     up: Pen,
     right: Pen,
@@ -65,7 +63,7 @@ impl FieldDrawing {
     }
 }
 
-#[derive(Copy, Debug)]
+#[derive(Copy, Clone, Debug)]
 enum Field {
     None,
     Decoration(char),
@@ -358,13 +356,13 @@ fn level(score: u32) -> u8 {
     lvl
 }
 
-#[derive(Copy,PartialEq,Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum LiquidType {
     Acid,
     Glue,
 }
 
-#[derive(Copy,PartialEq,Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum TileType {
     Plain(u8),
     Permanent,
@@ -1003,7 +1001,7 @@ impl Particle {
     }
 
     fn dead(&self) -> bool {
-        let ttl = std::time::duration::Duration::milliseconds(self.ttl as i64);
+        let ttl = time::Duration::milliseconds(self.ttl as i64);
         time::SteadyTime::now() - self.start > ttl
     }
 }
@@ -1159,7 +1157,7 @@ fn play() {
             n => match n as u8 as char {
                 '\t' => blk = try_move(blk.turned(), blk, &bd, &mut pg),
                 '\r' => {
-                    let grace = std::time::duration::Duration::milliseconds(500);
+                    let grace = time::Duration::milliseconds(500);
                     if time::SteadyTime::now() - last_drop_time > grace {
                         drop = true;
                     }
@@ -1234,7 +1232,7 @@ fn play() {
     }
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 enum MenuAction {
     Play,
     Help,
