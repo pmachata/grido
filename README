@@ -1,0 +1,79 @@
+ ╶─╼━━━━━━━━━━━╾─╴
+ ╶╼ G R I D - O ╾╴
+ ╶─╼━━━━━━━━━━━╾─╴
+
+Grid-O is a puzzle game whose objective is somewhat similar to that of
+Tetris, except the whole concept is implemented in two dimensions: you
+are given series of blocks, and have to place them on board so that
+they form a contiguous area of 3x3 tiles.  Such areas then disappear
+("explode"), giving you score.
+
+I wrote this game mostly to explore Rust programming language.
+Before, I implemented the same concept in Objective C and in Delphi.
+The original idea comes from the DOS game Squarez by Adept Software.
+(Though I had to spend quite some time hunting around the web to find
+how the game was called--it's been a long time!).
+
+Grid-O renders in Unicode, and plays OK on an 80x24 terminal.  You do
+need Unicode fonts to render properly--the game uses a number of
+characters from the "Symbol, Other", especially box drawing
+characters, but also superscripts.  Make sure you have a font with
+decent coverage.
+
+It also means I can include a screen shot in this very README file:
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓    ┏━━━┓
+┃ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ ┃    ┃   ┃
+┃───┏━┯━━━┯━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓───┃    ┗━━━┛
+┃ ✖ ┠─┼───┼───┼─╴ .  .  .  .  .  .  .  .  .  .  .  .  .  .  ┃ ✖ ┃
+┃───┃ │   │   │    .  .  .  .  .  .  .  .  .  . ┏━━━┓  .┏━━━┫───┃    ┏━━━┓
+┃ ✖ ┠─┼───┼───┼─╴.  .  .  .  .  .  .  .  .  .  .┃   ┃.  ┃   ┃ ✖ ┃    ┃   ┃
+┃───┃ │   │   │   .  .  .  .  .  .  .  .  . ┏━━━╋━━━┛ . ┗━━━┫───┃    ┗━━━┛
+┃ ✖ ┠─┼───┼───┼─╴  .  .  .  .  .  .  .  .  .┃   ┃.  .  .  . ┃ ✖ ┃◂████████▋   ▸
+┃───┃ ╵   ╵   ╵  .  .  .┏━━━┓.  .  .  .  .  ┗━━━┛ .  .  .  .┃───┃Score:	1086
+┃ ✖ ┃ .  .  .  .  .  .  ┃ ↯ ┃ .  .  .  .  .  .  .  .  .  .  ┃ ✖ ┃Level: 5
+┃───┃  .  .  .  .  .  . ┗━━━╋━━━┓ .  .  .  .  . ┏━━━━━━━┓ . ┃───┃
+┃ ✖ ┃.  .  .  .  .  .  .  . ┃   ┃  .  .  .  .  .┃ • │ •³┃  .┃ ✖ ┃◂            ▸
+┃───┃ .  .  .  .  .  .  .  .┗━━━┛.  .  .  .  .  ┗━━━┓───┗━━━┫───┃Multi: x1
+┃ ✖ ┃  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  ┃   │ • ┃ ✖ ┃
+┃───┃.  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . ┃─── ───┃───┃
+┃ ✖ ┃ .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .┃   │ • ┃ ✖ ┃
+┃───┃  .┏━━━━━━━┓  .┏━━━┓.  .  .  .  ▴ ▴   .  .  .  ┗━━━━━━━┫───┃
+┃ ✖ ┃.  ┃   │   ┃.  ┃   ┃ .  .  .  .▴ ▴ ▴.  .  .  .  .  .  .┃ ✖ ┃
+┃───┃ . ┃─── ───┗━━━┛───┗━━━┓ .  ▴ ▴ ▴ ▴ ▴ ▴ .  .  .  .  .  ┃───┃
+┃ ✖ ┃  .┃   │   │   │ - │   ┃  .▴ ▴ ▴ ▴ ▴ ▴ ▴ .  .  .  .  . ┃ ✖ ┃
+┃───┃.  ┃─── ─── ─── ─── ───┃.   ▴ ▴ ▴ ▴ ▴ ▴   .┏━━━┓.  ┏━━━┫───┃
+┃ ✖ ┃ . ┃   │   │   │   │   ┃ .  .  ▴ ▴ ▴ .  .  ┃   ┃ . ┃   ┃ ✖ ┃
+┃───┗━━━┻━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━┻━━━┻━━━┻━━━┛───┃
+┃ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ │ ✖ ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+```
+
+The following screen shot is from in-game help screen listing the
+various tile types that you can find in the game:
+
+```
+ ╶─╼━━━━━━━━━━━╾─╴                          ┏━━━┓ Picker.  Doesn't explode.
+ ╶╼ G R I D - O ╾╴                          ┃[ ]┃ Allows picking other tiles.
+ ╶─╼━━━━━━━━━━━╾─╴                          ┗━━━┛
+
+    ┏━━━┓ Plain tiles.  When organized  ┏━━━━━━━┓ Killer.  Kills tiles that
+    ┃   ┃ into a 3x3, explode and	┃ ↯ │ ↯³┃ it touches.  On drop,
+    ┗━━━┛ disappear.  1 point.          ┗━━━━━━━┛ changes to plain.
+
+┏━━━━━━━┓ Shield tiles.  When exploded,     ┏━━━┓ Permanent.
+┃ • │ •³┃ decrease the number, eventually   ┃ ✖ ┃ Never explodes.
+┗━━━━━━━┛ change to plain.  n+1 points.     ┗━━━┛ Kill them!
+
+┏━━━━━━━┓ Centerpiece.  Only explode    ┏━━━━━━━┓ Plus, Minus.  When exploded,
+┃ ◉ │ ◉³┃ when 3x3 has a centerpiece    ┃ + │ - ┃ change the multiplier.
+┗━━━━━━━┛ in the center.  10*n points.  ┗━━━━━━━┛ 1 point.
+
+┏━━━━━━━┓ Whopper.  Like centerpiece    ┏━━━━━━━┓ Flask with Glue and Acid.
+┃ ✱ │ ✱³┃ but only explodes 5x5.  When  ┃ ▿ │ ▴ ┃ Spill contents around
+┗━━━━━━━┛ exploded, changes to c-piece  ┗━━━━━━━┛ when exploded.  1 point.
+          with the same number.
+          30 points.
+
+```
