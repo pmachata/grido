@@ -1224,7 +1224,8 @@ fn play() {
         }
 
         if mult_drop {
-            multiplier += if multiplier > 1 { -1 } else { 1 };
+            multiplier = if multiplier > 1 { multiplier - 1 }
+            		 else { multiplier + 1 };
             last_mult_time = time::SteadyTime::now();
         } else if multiplier == 1 {
             last_mult_time = time::SteadyTime::now();
