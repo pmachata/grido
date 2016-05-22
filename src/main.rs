@@ -1193,8 +1193,12 @@ fn play() {
                 score += bonus;
 
                 if dmult != 0 {
-                    if dmult < 0 && -dmult as u32 >= multiplier {
-                        multiplier = 0
+                    if dmult < 0 {
+                        if -dmult as u32 >= multiplier {
+                            multiplier = 0
+                        } else {
+                            multiplier -= -dmult as u32;
+                        }
                     } else {
                         multiplier += dmult as u32;
                     }
