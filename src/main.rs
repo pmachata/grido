@@ -1,7 +1,9 @@
 extern crate ncurses;
 extern crate time;
+extern crate rand;
 
 use ncurses as nc;
+use rand::Rng;
 
 #[derive(Copy, Clone, Debug)]
 enum Pen {
@@ -329,23 +331,6 @@ impl Grid {
 }
 
 
-fn rand() -> u8 {
-    static mut lfsr: u16 = 0xACE3;
-    unsafe {
-        let bit = ((lfsr >> 0) ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1;
-        lfsr = (lfsr >> 1) | (bit << 15);
-        lfsr as u8
-    }
-}
-
-fn randint(range: u8) -> u8 {
-    (rand() as u16 * range as u16 / 256u16) as u8
-}
-
-fn randbool() -> bool {
-    randint(2) == 0
-}
-
 fn level(score: u32) -> u8 {
     let mut base: u32 = 0;
     let mut lvl: u8 = 0;
@@ -389,34 +374,36 @@ enum ExplodeAction {
 impl TileType {
     fn new_random(score: u32) -> TileType {
         let lvl = level(score);
+        let mut rng = rand::thread_rng();
         loop {
-            match randint(33) {
+            match rng.gen_range(0, 33) {
                 0...20 => return TileType::Plain(0),
 
                 21...23 => return TileType::Picker,
 
                 24 if lvl >= 1
-                    => return if randbool() { TileType::Minus } else { TileType::Plus },
+                    => return if rng.gen() { TileType::Minus }
+                              else { TileType::Plus },
 
                 25...26 if lvl >= 2
-                    => return TileType::Plain(1 + randint(lvl - 1)),
+                    => return TileType::Plain(1 + rng.gen_range(0, lvl)),
 
                 27 if lvl >= 3
-                    => return TileType::Flask(if randbool() { LiquidType::Acid }
+                    => return TileType::Flask(if rng.gen() { LiquidType::Acid }
                                               else { LiquidType::Glue }),
 
                 28 if lvl >= 4
-                    => return TileType::Killer(1 + randint(lvl / 8)),
+                    => return TileType::Killer(1 + rng.gen_range(0, lvl / 8 + 1)),
 
 
                 29...30 if lvl >= 5
-                    => return TileType::Centerpiece(1 + randint(lvl / 4)),
+                    => return TileType::Centerpiece(1 + rng.gen_range(0, lvl / 4 + 1)),
 
                 31 if lvl >= 6
-                    => return TileType::Whopper(1 + randint(lvl / 4)),
+                    => return TileType::Whopper(1 + rng.gen_range(0, lvl / 4 + 1)),
 
-                32 if lvl >= 8 && randbool()
-                    => return TileType::Permanent,
+                32 if lvl >= 8
+                    => if rng.gen() { return TileType::Permanent },
 
                 _ => {},
             }
@@ -686,7 +673,7 @@ impl Block {
             &SHAPE
         }
 
-        return match rand() % 7 {
+        return match rand::random::<u8>() % 7 {
             0 => Block::new_from_shape(shape_1x1(), score),
             1 => Block::new_from_shape(shape_1x2(), score),
             2 => Block::new_from_shape(shape_1x3(), score),
@@ -1363,12 +1350,6 @@ fn help() {
 
 fn main() {
     nc::setlocale(nc::LcCategory::all, "");
-
-    // Seed the random generator.
-    for _ in 0 .. time::now().tm_nsec % 100 {
-        rand();
-    }
-
     nc::initscr();
     nc::keypad(nc::stdscr, true);
     nc::nonl();

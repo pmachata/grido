@@ -11,3 +11,4 @@ name = "grido"
 [dependencies]
 ncurses = "*"
 time = "0.1.35"
+rand = "0.3"
