@@ -1006,10 +1006,6 @@ impl Particle {
     }
 }
 
-extern "C" {
-    pub fn setlocale(category: i32, locale: *const u8) -> *const u8;
-}
-
 fn play() {
     let (pgw, pgh) = (16 as i16, 12 as i16);
     let mut score = 0;
@@ -1366,9 +1362,7 @@ fn help() {
 }
 
 fn main() {
-    unsafe {
-        setlocale(0 /* = LC_CTYPE */, "\0".as_ptr());
-    }
+    nc::setlocale(nc::LcCategory::all, "");
 
     // Seed the random generator.
     for _ in 0 .. time::now().tm_nsec % 100 {
