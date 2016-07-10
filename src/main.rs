@@ -952,14 +952,14 @@ impl Block {
         {
             let mut rtiles = Vec::new();
             let mut spills = Vec::new();
-            'next: for &(xx, yy, tt) in &self.tiles {
+            'next2: for &(xx, yy, tt) in &self.tiles {
                 for &(x2, y2) in &killlist {
                     if self.x + xx == x2 && self.y + yy == y2 {
                         exploded.push((xx, yy, tt));
                         dmult += handle_xp_action(tt.explode(), xx, yy,
                                                   &mut spills, &mut rtiles);
                         hits += tt.bonus();
-                        continue 'next;
+                        continue 'next2;
                     }
                 }
                 rtiles.push((xx, yy, tt));
@@ -1164,6 +1164,7 @@ fn play() {
                 },
                 ' ' => blk = Block::new_random(score).moved_to(2, 2),
                 '+' => score += 500,
+                '*' => multiplier += 1,
                 'q' => break,
                 'p' => {
                     let pause_start = time::SteadyTime::now();

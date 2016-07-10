@@ -9,7 +9,5 @@ authors = [ "Petr Machata <pmachata@gmail.com>" ]
 name = "grido"
 
 [dependencies]
-time = "*"
-
-[dependencies.ncurses]
-git = "https://github.com/jeaye/ncurses-rs.git"
+ncurses = "*"
+time = "0.1.35"
