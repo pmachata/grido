@@ -1163,9 +1163,11 @@ fn play() {
                         drop = true;
                     }
                 },
+                /*
                 ' ' => blk = Block::new_random(score).moved_to(2, 2),
                 '+' => score += 500,
                 '*' => multiplier += 1,
+                */
                 'q' => break,
                 'p' => {
                     let pause_start = time::SteadyTime::now();
