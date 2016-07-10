@@ -9,7 +9,7 @@ they form a contiguous area of 3x3 tiles.  Such areas then disappear
 ("explode"), giving you score.
 
 I wrote this game mostly to explore Rust programming language.
-Before, I implemented the same concept in Objective C and in Delphi.
+In the past, I implemented the same concept in Objective C and in Delphi.
 The original idea comes from the DOS game Squarez by Adept Software.
 (Though I had to spend quite some time hunting around the web to find
 how the game was called--it's been a long time!).
