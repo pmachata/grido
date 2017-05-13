@@ -1372,7 +1372,7 @@ fn main() {
     nc::setlocale(nc::LcCategory::all, "");
 
     nc::initscr();
-    nc::keypad(nc::stdscr, true);
+    nc::keypad(unsafe {nc::stdscr}, true);
     nc::nonl();
     nc::cbreak();
     nc::raw();
