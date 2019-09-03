@@ -395,15 +395,15 @@ impl TileType {
         let mut rng = rand::thread_rng();
         loop {
             match rng.gen_range(0, 33) {
-                0...20 => return TileType::Plain(0),
+                0..=20 => return TileType::Plain(0),
 
-                21...23 => return TileType::Picker,
+                21..=23 => return TileType::Picker,
 
                 24 if lvl >= 1
                     => return if rng.gen() { TileType::Minus }
                               else { TileType::Plus },
 
-                25...26 if lvl >= 2
+                25..=26 if lvl >= 2
                     => return TileType::Plain(1 + rng.gen_range(0, lvl)),
 
                 27 if lvl >= 3
@@ -414,7 +414,7 @@ impl TileType {
                     => return TileType::Killer(1 + rng.gen_range(0, lvl / 8 + 1)),
 
 
-                29...30 if lvl >= 5
+                29..=30 if lvl >= 5
                     => return TileType::Centerpiece(1 + rng.gen_range(0, lvl / 4 + 1)),
 
                 31 if lvl >= 6
